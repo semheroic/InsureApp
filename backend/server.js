@@ -180,6 +180,18 @@ await query(`
     is_read TINYINT(1) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   )`);
+  await query(`
+  CREATE TABLE IF NOT EXISTS policy_history (
+    id INT(11) NOT NULL AUTO_INCREMENT,
+    policy_id INT(11) NOT NULL,
+    expiry_date DATE NOT NULL,
+    renewed_date DATE DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY policy_id (policy_id)
+  ) ENGINE=InnoDB
+`);
 
   console.log("✅ Tables ensured");
 }
@@ -223,19 +235,34 @@ app.get("/auth/me", isAuthenticated, async (req, res) => {
 // ---------------- GET ALL USERS ----------------
 app.get("/users", async (req, res) => {
   try {
-    const users = await query("SELECT * FROM users ORDER BY id DESC");
+    const sql = `
+      SELECT 
+        id, 
+        profile_picture, 
+        name, 
+        email, 
+        phone, 
+        role, 
+        status,
+        /* Format join_date, or fallback to created_at if join_date is NULL */
+        DATE_FORMAT(IFNULL(join_date, created_at), '%M %d, %Y') AS joined_date,
+        DATE_FORMAT(updated_at, '%d %b %Y, %h:%i %p') AS last_update
+      FROM users 
+      ORDER BY id DESC
+    `;
+    
+    const users = await query(sql);
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-
 // ---------------- GET USER BY ID ----------------
 app.get("/users/:id", async (req, res) => {
   try {
     const users = await query(
       `SELECT id, profile_picture, name, email, phone, role, status,
-      DATE_FORMAT(join_date,'%Y-%m-%d') as join_date,
+      DATE_FORMAT(join_date,'%Y-%m-%d') as joinDate,
       DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s') as created_at,
       DATE_FORMAT(updated_at,'%Y-%m-%d %H:%i:%s') as updated_at
       FROM users WHERE id=?`,
@@ -252,15 +279,35 @@ app.get("/users/:id", async (req, res) => {
 app.post("/users", upload.single("profile_picture"), async (req, res) => {
   try {
     const { name, email, phone, password, role } = req.body;
-    if (!name || !email || !password)
-      return res.status(400).json({ error: "Name, email, and password are required" });
 
+    // 1. Basic Validation
+    if (!name || !email || !password || !phone) {
+      return res.status(400).json({ error: "Name, email, password, and phone are required" });
+    }
+
+    // 2. CHECK IF PHONE OR EMAIL EXISTS (Using exact matches)
+    // This will look for the exact string provided (e.g., "+250..." or "078...")
+    const existingUser = await query(
+      "SELECT email, phone FROM users WHERE email = ? OR phone = ?", 
+      [email, phone]
+    );
+
+    if (existingUser.length > 0) {
+      // Find specifically which one caused the conflict
+      const isEmailConflict = existingUser.some(u => u.email === email);
+      const conflict = isEmailConflict ? "Email" : "Phone number";
+      
+      return res.status(400).json({ error: `${conflict} is already registered.` });
+    }
+
+    // 3. Hash Password and Handle File
     const hashed = await bcrypt.hash(password, 10);
     const profile_picture = req.file ? `/uploads/${req.file.filename}` : null;
 
+    // 4. Insert User with original phone string
     const result = await query(
-      "INSERT INTO users (name,email,phone,password,role,profile_picture) VALUES (?,?,?,?,?,?)",
-      [name, email, phone || "", hashed, role || "User", profile_picture]
+      "INSERT INTO users (name, email, phone, password, role, profile_picture) VALUES (?,?,?,?,?,?)",
+      [name, email, phone, hashed, role || "User", profile_picture]
     );
 
     // --- SEND EMAIL ---
@@ -271,14 +318,11 @@ app.post("/users", upload.single("profile_picture"), async (req, res) => {
       html: `
         <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee;">
           <h2 style="color: #2563eb;">Welcome, ${name}!</h2>
-          <p>Your account has been created successfully. Here are your login details:</p>
+          <p>Your account has been created successfully.</p>
           <div style="background: #f8fafc; padding: 15px; border-radius: 8px;">
             <p><strong>Email:</strong> ${email}</p>
             <p><strong>Password:</strong> ${password}</p>
           </div>
-          <p style="color: #64748b; font-size: 12px; margin-top: 20px;">
-            Please change your password immediately after logging in for security.
-          </p>
         </div>
       `,
     };
@@ -287,7 +331,6 @@ app.post("/users", upload.single("profile_picture"), async (req, res) => {
 
     res.status(201).json({ id: result.insertId, name, email, role: role || "User" });
   } catch (err) {
-    if (err.code === "ER_DUP_ENTRY") return res.status(400).json({ error: "Email exists" });
     res.status(500).json({ error: err.message });
   }
 });
@@ -358,7 +401,38 @@ app.delete("/users/:id", async (req, res) => {
   }
 });
 // ======================== POLICIES CRUD + SMS ========================
-app.get("/policies", async (req,res)=>{ const policies = await query("SELECT id, plate, owner, company, DATE_FORMAT(start_date,'%Y-%m-%d') AS start_date, DATE_FORMAT(expiry_date,'%Y-%m-%d') AS expiry_date, contact, CASE WHEN DATEDIFF(expiry_date,NOW())<0 THEN 'Expired' WHEN DATEDIFF(expiry_date,NOW())<=3 THEN 'Expiring Soon' ELSE 'Active' END AS status FROM policies ORDER BY expiry_date ASC"); res.json(policies); });
+app.get("/policies", async (req, res) => {
+  try {
+    const sql = `
+      SELECT 
+        id, 
+        plate, 
+        owner, 
+        company, 
+        DATE_FORMAT(start_date, '%Y-%m-%d') AS start_date, 
+        DATE_FORMAT(expiry_date, '%Y-%m-%d') AS expiry_date, 
+        contact,
+        CASE 
+          /* 1. Show 'Renewed' ONLY if updated in last 12h AND it's not a brand new record */
+          WHEN updated_at > NOW() - INTERVAL 12 HOUR 
+               AND updated_at > created_at + INTERVAL 1 MINUTE 
+               THEN 'Renewed'
+          
+          /* 2. Standard date-based logic */
+          WHEN DATEDIFF(expiry_date, NOW()) < 0 THEN 'Expired'
+          WHEN DATEDIFF(expiry_date, NOW()) <= 3 THEN 'Expiring Soon'
+          ELSE 'Active'
+        END AS status
+      FROM policies 
+      ORDER BY expiry_date ASC
+    `;
+
+    const policies = await query(sql);
+    res.json(policies);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.get("/policies/:id", async (req, res) => {
   const rows = await query(`
     SELECT *,
@@ -378,43 +452,85 @@ app.get("/policies/:id", async (req, res) => {
   res.json(rows[0]);
 });
 
+// POST: Create a new policy
 app.post("/policies", async (req, res) => {
-  const { plate, owner, company, start_date, expiry_date, contact } = req.body;
+  try {
+    const { plate, owner, company, start_date, expiry_date, contact } = req.body;
 
-  if (!plate || !owner || !company || !start_date || !expiry_date || !contact) {
-    return res.status(400).json({ error: "All fields required" });
+    if (!plate || !owner || !company || !start_date || !expiry_date || !contact) {
+      return res.status(400).json({ error: "All fields required" });
+    }
+
+    // 1. Check if the contact number already exists in policies
+    const existing = await query("SELECT id FROM policies WHERE contact = ?", [contact]);
+    if (existing.length > 0) {
+      return res.status(400).json({ error: "Phone number is already associated with an active policy." });
+    }
+
+    // 2. Insert new policy
+    const result = await query(
+      "INSERT INTO policies (plate, owner, company, start_date, expiry_date, contact) VALUES (?,?,?,?,?,?)",
+      [plate, owner, company, start_date, expiry_date, contact]
+    );
+
+    sendSMS(contact, `Your insurance policy for ${plate} runs from ${start_date} to ${expiry_date}.`)
+      .catch(console.error);
+
+    res.status(201).json({ id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  const result = await query(
-    "INSERT INTO policies (plate, owner, company, start_date, expiry_date, contact) VALUES (?,?,?,?,?,?)",
-    [plate, owner, company, start_date, expiry_date, contact]
-  );
-
-  sendSMS(contact, `Your insurance policy for ${plate} runs from ${start_date} to ${expiry_date}.`)
-    .catch(console.error);
-
-  res.status(201).json({ id: result.insertId });
 });
 
+// PUT: Renew policy and log history
 app.put("/policies/:id", async (req, res) => {
-  const { plate, owner, company, start_date, expiry_date, contact } = req.body;
+  try {
+    const { plate, owner, company, start_date, expiry_date, contact } = req.body;
+    const policyId = req.params.id;
 
-  // Update policy and set updated_at for reference if needed
-  await query(
-    `UPDATE policies
-     SET plate=?, owner=?, company=?, start_date=?, expiry_date=?, contact=?, updated_at=NOW()
-     WHERE id=?`,
-    [plate, owner, company, start_date, expiry_date, contact, req.params.id]
-  );
+    // 1. Check if the contact is already used by ANOTHER policy
+    // We search for the contact where the ID is NOT the one we are currently updating
+    const existingContact = await query(
+      "SELECT id FROM policies WHERE contact = ? AND id != ?", 
+      [contact, policyId]
+    );
 
-  // Optionally send SMS notification on renewal
-  sendSMS(contact, `Your insurance policy for ${plate} has been renewed. New period: ${start_date} to ${expiry_date}.`)
-    .catch(console.error);
+    if (existingContact.length > 0) {
+      return res.status(400).json({ 
+        error: "This contact number is already assigned to another policy." 
+      });
+    }
 
-  // Respond with Renewed status
-  res.json({ message: "Policy renewed successfully", status: "Renewed" });
+    // 2. Log current state into policy_history BEFORE updating
+    const currentPolicy = await query("SELECT expiry_date FROM policies WHERE id = ?", [policyId]);
+    
+    if (currentPolicy.length > 0) {
+      await query(
+        "INSERT INTO policy_history (policy_id, expiry_date, renewed_date) VALUES (?, ?, ?)",
+        [policyId, currentPolicy[0].expiry_date, new Date()]
+      );
+    }
+
+    // 3. Update the main policy table
+    await query(
+      `UPDATE policies 
+       SET plate=?, owner=?, company=?, start_date=?, expiry_date=?, contact=?, updated_at=NOW() 
+       WHERE id=?`,
+      [plate, owner, company, start_date, expiry_date, contact, policyId]
+    );
+
+    sendSMS(contact, `Your insurance policy for ${plate} has been renewed. New period: ${start_date} to ${expiry_date}.`)
+      .catch(console.error);
+
+    res.json({ message: "Policy renewed successfully", status: "Renewed" });
+  } catch (err) {
+    // Catch unique constraint violation if manual check fails or race condition occurs
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ error: "Contact number already exists in the system." });
+    }
+    res.status(500).json({ error: err.message });
+  }
 });
-
 app.delete("/policies/:id", async (req,res)=>{ await query("DELETE FROM policies WHERE id=?",[req.params.id]); res.json({ message:"Policy deleted" }); });
 
 // ======================== DASHBOARD / STATS ========================

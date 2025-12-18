@@ -95,7 +95,7 @@ const Users = () => {
       const formatted: User[] = data.map((u: any) => ({
         ...u,
         initials: u.name.split(" ").map((n: string) => n[0]).join("").toUpperCase(),
-        joinDate: u.join_date || u.joinDate,
+        joinDate: u.joinDate || u.joinDate,
         profile_picture: u.profile_picture ? `${API_URL.replace("/users", "")}${u.profile_picture}` : undefined,
       }));
       setUsers(formatted);

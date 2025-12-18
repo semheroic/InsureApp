@@ -44,7 +44,7 @@ export const Sidebar = () => {
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <span className="text-primary-foreground font-bold text-lg">I</span>
           </div>
-          <span className="font-bold text-xl text-foreground">InsurePro</span>
+          <span className="font-bold text-xl text-foreground">Bright Insurance Agency</span>
         </div>
       </div>
 

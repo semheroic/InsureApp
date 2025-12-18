@@ -151,25 +151,44 @@ const Policies = () => {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredPolicies.slice(start, start + itemsPerPage);
   }, [filteredPolicies, currentPage]);
-
+const validateRWPhone = (phone: string) => {
+  // Matches: 078..., 079..., 072..., 073... or +25078... etc.
+  // Must be exactly 10 digits (if starting with 0) or 13 (if starting with +250)
+  const regex = /^(\+?250|0)?(7[2389])[0-9]{7}$/;
+  return regex.test(phone);
+};
   /* ---------------- ADD ---------------- */
   const handleAdd = async () => {
-    try {
-      await axios.post(API_URL, {
-        plate: formData.plate,
-        owner: formData.owner,
-        company: formData.company,
-        start_date: formData.startDate,
-        expiry_date: formData.expiryDate,
-        contact: formData.contact,
-      });
-      fetchPolicies();
-      setIsAddDialogOpen(false);
-      toast({ title: "Added", description: "Policy added successfully" });
-    } catch {
-      toast({ title: "Error", description: "Failed to add policy", variant: "destructive" });
-    }
-  };
+  // 1. Validate Phone Number
+  if (!validateRWPhone(formData.contact)) {
+    toast({
+      title: "Invalid Phone Number",
+      description: "Please enter a valid Rwandan number (e.g., 078... or +250...)",
+      variant: "destructive",
+    });
+    return; // Stop execution
+  }
+
+  try {
+    await axios.post(API_URL, {
+      plate: formData.plate,
+      owner: formData.owner,
+      company: formData.company,
+      start_date: formData.startDate,
+      expiry_date: formData.expiryDate,
+      contact: formData.contact,
+    });
+    fetchPolicies();
+    setIsAddDialogOpen(false);
+    toast({ title: "Added", description: "Policy added successfully" });
+    // Reset form
+    setFormData({ plate: "", owner: "", company: "SORAS", startDate: "", expiryDate: "", contact: "" });
+  } catch (error: any) {
+    // Catch the "Phone number exists" error from your backend
+    const errMsg = error.response?.data?.error || "Failed to add policy";
+    toast({ title: "Error", description: errMsg, variant: "destructive" });
+  }
+};
 
   /* ---------------- EDIT ---------------- */
   const handleEdit = async () => {

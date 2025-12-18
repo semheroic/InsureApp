@@ -4,16 +4,18 @@ import {
   Search,
   Bell,
   LogOut,
-  CheckCircle,
-  MailOpen,
-  Mail,
   Trash2,
   Edit,
   MessageSquare,
-  History,
-  Check,
   ChevronDown,
   ChevronUp,
+  AlertCircle,
+  MailOpen,
+  Sun,
+  Moon,
+  Timer,
+  CheckCircle2,
+  Inbox,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -23,247 +25,213 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 const API_URL = "http://localhost:5000";
-
-type User = {
-  id: number;
-  name: string;
-  email: string;
-  profile_picture?: string;
-};
-
-type Notification = {
-  id: number;
-  phone_number: string;
-  message: string;
-  is_read: number;
-  created_at: string;
-  expanded?: boolean;
-};
+const SESSION_DURATION_HOURS = 8;
 
 export const Header = () => {
   const navigate = useNavigate();
 
-  const [user, setUser] = useState<User>({ id: 0, name: "", email: "" });
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  // --- STATES ---
+  const [user, setUser] = useState({ id: 0, name: "", email: "", profile_picture: "" });
+  const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showAllLogs, setShowAllLogs] = useState(false);
-  const [hasNewAlert, setHasNewAlert] = useState(false);
+  const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
+  const [timeLeft, setTimeLeft] = useState("");
+  const [progress, setProgress] = useState(100);
 
-  // Character limit for "Show More" logic
-  const MESSAGE_LIMIT = 90;
-
-  const prevUnreadRef = useRef(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
+  // --- THEME ---
   useEffect(() => {
-    audioRef.current = new Audio("/sounds/notification.wav");
-    audioRef.current.volume = 0.6;
-    audioRef.current.load();
-  }, []);
+    const root = window.document.documentElement;
+    theme === "dark" ? root.classList.add("dark") : root.classList.remove("dark");
+    localStorage.setItem("theme", theme);
+  }, [theme]);
 
+  // --- DATA FETCH ---
   useEffect(() => {
     fetch(`${API_URL}/auth/me`, { credentials: "include" })
       .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then((data: User) => setUser(data))
+      .then((data) => setUser(data))
       .catch(() => navigate("/"));
+    
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
   }, [navigate]);
 
   const fetchNotifications = async () => {
     try {
       const res = await fetch(`${API_URL}/sms/logs`, { credentials: "include" });
       const data = await res.json();
-      const logs: Notification[] = data.logs || [];
-      const unread = logs.filter((n) => n.is_read === 0).length;
-
-      if (unread > prevUnreadRef.current) {
-        setHasNewAlert(true);
-        audioRef.current?.play().catch(() => {});
-        setTimeout(() => setHasNewAlert(false), 1800);
-      }
-
-      prevUnreadRef.current = unread;
+      const logs = data.logs || [];
       setNotifications(logs);
-      setUnreadCount(unread);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+      setUnreadCount(logs.filter((n: any) => n.is_read === 0).length);
+    } catch (err) { console.error(err); }
   };
 
-  useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const markAllAsRead = async () => {
-    await fetch(`${API_URL}/sms/mark-read`, { method: "PUT", credentials: "include" });
-    setNotifications((n) => n.map((x) => ({ ...x, is_read: 1 })));
-    setUnreadCount(0);
-  };
-
-  const toggleRead = async (id: number, read: boolean) => {
-    const url = read ? `${API_URL}/sms/mark-read` : `${API_URL}/sms/mark-unread/${id}`;
-    await fetch(url, { method: "PUT", credentials: "include" });
-    setNotifications((n) => n.map((x) => (x.id === id ? { ...x, is_read: read ? 1 : 0 } : x)));
-    setUnreadCount((c) => Math.max(0, read ? c - 1 : c + 1));
-  };
-
-  const deleteNotification = async (id: number) => {
-    if (!confirm("Delete log?")) return;
-    await fetch(`${API_URL}/sms/delete/${id}`, { method: "DELETE", credentials: "include" });
-    setNotifications((n) => n.filter((x) => x.id !== id));
-  };
-
-  const toggleExpand = (id: number) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, expanded: !n.expanded } : n))
-    );
-  };
-
-  const logout = async () => {
+  const handleLogout = async () => {
+    localStorage.removeItem("login_time");
     await fetch(`${API_URL}/auth/logout`, { method: "POST", credentials: "include" });
     navigate("/");
   };
 
+  // --- SESSION TIMER ---
+  useEffect(() => {
+    let loginTimestamp = localStorage.getItem("login_time") || Date.now().toString();
+    if (!localStorage.getItem("login_time")) localStorage.setItem("login_time", loginTimestamp);
+    const endTime = parseInt(loginTimestamp) + SESSION_DURATION_HOURS * 60 * 60 * 1000;
+
+    const updateTimer = () => {
+      const distance = endTime - Date.now();
+      if (distance < 0) return handleLogout();
+      const h = Math.floor(distance / (1000 * 60 * 60));
+      const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+      const s = Math.floor((distance % (1000 * 60)) / 1000);
+      setTimeLeft(`${h}h ${m}m ${s}s`);
+      setProgress((distance / (SESSION_DURATION_HOURS * 60 * 60 * 1000)) * 100);
+    };
+    const t = setInterval(updateTimer, 1000);
+    return () => clearInterval(t);
+  }, []);
+
   const filteredNotifications = useMemo(() => {
-    const q = search.toLowerCase();
-    return notifications.filter(
-      (n) => n.message.toLowerCase().includes(q) || n.phone_number.includes(q)
-    );
+    return notifications.filter((n: any) => n.message.toLowerCase().includes(search.toLowerCase()));
   }, [notifications, search]);
 
-  const visibleNotifications = showAllLogs ? filteredNotifications : filteredNotifications.slice(0, 5);
+  const visibleNotifications = showAllLogs ? filteredNotifications : filteredNotifications.slice(0, 4);
 
   return (
-    <header className="fixed top-0 right-0 left-[280px] h-16 border-b bg-background/95 backdrop-blur-md z-50">
+    <header className="fixed top-0 right-0 left-[280px] h-16 border-b bg-background/80 backdrop-blur-xl z-50 transition-all duration-300">
       <div className="h-full px-6 flex justify-between items-center">
         
-        {/* SEARCH BAR */}
-        <div className="max-w-md w-full relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Quick search..." className="pl-10 bg-muted/40 border-none h-10 rounded-xl" />
+        {/* SEARCH */}
+        <div className="flex items-center gap-4 flex-1 max-w-md">
+          <div className="relative w-full group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+            <Input placeholder="Search logs..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10 bg-muted/40 border-none h-10 rounded-xl focus-visible:ring-1 focus-visible:ring-primary/20" />
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} className="rounded-xl shrink-0 border border-transparent hover:border-muted-foreground/10">
+            {theme === "light" ? <Moon className="w-5 h-5 text-slate-700" /> : <Sun className="w-5 h-5 text-yellow-400" />}
+          </Button>
         </div>
 
-        <div className="flex items-center gap-1">
-          {/* NOTIFICATIONS DROPDOWN */}
-          <DropdownMenu>
+        <div className="flex items-center gap-3">
+          
+          {/* MODERN NOTIFICATIONS DROPDOWN */}
+          <DropdownMenu onOpenChange={(open) => !open && setShowAllLogs(false)}>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className={cn("relative w-10 h-10 rounded-xl", hasNewAlert && "ring-2 ring-primary/20 animate-pulse")}>
-                <Bell className={cn("w-5 h-5 text-muted-foreground", hasNewAlert && "text-primary")} />
-                {unreadCount > 0 && <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-primary border-2 border-background" />}
+              <Button variant="ghost" size="icon" className={cn("relative w-10 h-10 rounded-xl transition-all", unreadCount > 0 && "bg-primary/5 hover:bg-primary/10")}>
+                <Bell className={cn("w-5 h-5", unreadCount > 0 ? "text-primary animate-pulse" : "text-muted-foreground")} />
+                {unreadCount > 0 && <span className="absolute top-2.5 right-2.5 h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-background" />}
               </Button>
             </DropdownMenuTrigger>
-
-            <DropdownMenuContent align="end" className="w-[380px] p-0 shadow-2xl rounded-2xl border-muted/60 overflow-hidden">
-              <div className="p-4 bg-muted/20 border-b flex justify-between items-center">
-                <h3 className="font-bold text-sm">System Notifications</h3>
-                <Button variant="ghost" size="sm" onClick={markAllAsRead} className="h-7 text-xs text-primary">Mark read</Button>
+            
+            <DropdownMenuContent align="end" className="w-[420px] p-0 rounded-3xl border-muted/40 bg-popover shadow-2xl overflow-hidden mt-2">
+              <div className="p-5 bg-gradient-to-r from-primary/10 via-transparent to-transparent border-b flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-sm tracking-tight text-foreground">Activity Feed</h3>
+                  <p className="text-[10px] text-muted-foreground font-medium">You have {unreadCount} unread alerts</p>
+                </div>
+                <div className="flex gap-1.5">
+                  <Button variant="outline" size="sm" className="h-7 text-[10px] font-bold rounded-lg border-primary/20 text-primary hover:bg-primary/5">Mark All</Button>
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] font-bold rounded-lg text-muted-foreground hover:text-destructive">Clear</Button>
+                </div>
               </div>
 
-              <div className="max-h-[400px] overflow-y-auto scrollbar-hide">
-                {filteredNotifications.length === 0 ? (
-                  <div className="p-10 text-center text-xs text-muted-foreground">No recent logs</div>
+              <div className="max-h-[420px] overflow-y-auto scrollbar-thin scrollbar-thumb-muted">
+                {visibleNotifications.length === 0 ? (
+                  <div className="py-20 text-center">
+                    <div className="w-12 h-12 bg-muted/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <Inbox className="w-6 h-6 text-muted-foreground opacity-40" />
+                    </div>
+                    <p className="text-xs text-muted-foreground font-medium italic">Everything is up to date.</p>
+                  </div>
                 ) : (
-                  visibleNotifications.map((n) => {
-                    const isLong = n.message.length > MESSAGE_LIMIT;
-                    return (
-                      <div key={n.id} className={cn("p-4 border-b border-muted/30 transition-all hover:bg-muted/20", !n.is_read && "bg-primary/[0.02] border-l-2 border-l-primary")}>
-                        <div className="flex gap-3">
-                          <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0", n.is_read ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary")}>
-                            <MessageSquare className="w-4 h-4" />
+                  <div className="p-3 space-y-1">
+                    {visibleNotifications.map((n: any) => (
+                      <div key={n.id} className={cn(
+                        "group relative flex gap-4 p-3 rounded-2xl transition-all cursor-pointer",
+                        n.is_read ? "opacity-70 grayscale-[0.5] hover:bg-muted/30" : "bg-primary/[0.03] hover:bg-primary/[0.06] border border-primary/5"
+                      )}>
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border",
+                          n.is_read ? "bg-muted border-muted-foreground/10" : "bg-primary/10 border-primary/20"
+                        )}>
+                          {n.is_read ? <CheckCircle2 className="w-4 h-4 text-muted-foreground" /> : <AlertCircle className="w-4 h-4 text-primary" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-center mb-0.5">
+                            <span className="text-[11px] font-black tracking-tight text-foreground">{n.phone_number}</span>
+                            <span className="text-[9px] text-muted-foreground font-bold uppercase">{new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex justify-between items-start mb-1">
-                              <span className="text-[11px] font-bold">{n.phone_number}</span>
-                              <span className="text-[10px] text-muted-foreground italic">{new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                            </div>
-                            
-                            {/* MESSAGE TEXT WITH SHOW MORE/LESS */}
-                            <p className="text-xs text-muted-foreground leading-relaxed">
-                              {n.expanded || !isLong ? n.message : `${n.message.substring(0, MESSAGE_LIMIT)}...`}
-                            </p>
-                            
-                            {isLong && (
-                              <button 
-                                onClick={() => toggleExpand(n.id)} 
-                                className="text-[10px] font-bold text-primary mt-1 flex items-center gap-0.5 hover:underline"
-                              >
-                                {n.expanded ? <><ChevronUp className="w-3 h-3"/> Show Less</> : <><ChevronDown className="w-3 h-3"/> Show More</>}
-                              </button>
-                            )}
-
-                            <div className="mt-3 flex gap-2">
-                               <Button variant="ghost" size="icon" className="h-6 w-6 rounded-md" onClick={() => toggleRead(n.id, n.is_read === 0)}>
-                                 {n.is_read ? <Mail className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
-                               </Button>
-                               <Button variant="ghost" size="icon" className="h-6 w-6 rounded-md hover:text-destructive" onClick={() => deleteNotification(n.id)}>
-                                 <Trash2 className="w-3.5 h-3.5" />
-                               </Button>
-                            </div>
-                          </div>
+                          <p className="text-xs text-muted-foreground leading-snug line-clamp-2 group-hover:line-clamp-none transition-all">
+                            {n.message}
+                          </p>
                         </div>
                       </div>
-                    );
-                  })
+                    ))}
+                  </div>
                 )}
               </div>
+
+              <Button variant="ghost" className="w-full h-12 text-[11px] font-black text-primary border-t rounded-none hover:bg-primary/5 gap-2 uppercase tracking-widest" onClick={() => setShowAllLogs(!showAllLogs)}>
+                {showAllLogs ? <><ChevronUp className="w-4 h-4" /> Show Less</> : <><ChevronDown className="w-4 h-4" /> View History</>}
+              </Button>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* USER PROFILE SECTION */}
+          {/* PROFILE */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-12 gap-3 px-4 border-l rounded-none hover:bg-muted/50 group transition-all">
+              <Button variant="ghost" className="h-12 gap-3 px-4 border-l border-muted/40 rounded-none hover:bg-muted/50 transition-all group">
                 <div className="relative">
-                  <Avatar className="w-9 h-9 border-2 border-background shadow-sm">
+                  <Avatar className="w-9 h-9 border-2 border-background shadow-md transition-transform group-hover:rotate-3">
                     {user.profile_picture ? (
-                      <AvatarImage src={`${API_URL}${user.profile_picture}`} />
+                      <AvatarImage src={`${API_URL}${user.profile_picture}`} alt={user.name} />
                     ) : (
-                      <AvatarFallback className="bg-primary/5 text-primary font-bold text-xs">
-                        {user.name?.[0]?.toUpperCase() || "U"}
-                      </AvatarFallback>
+                      <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">{user.name?.[0]}</AvatarFallback>
                     )}
                   </Avatar>
-                  <span className="absolute -bottom-0.5 -right-0.5 block h-3.5 w-3.5 rounded-full bg-background flex items-center justify-center">
-                    <span className="h-2.5 w-2.5 rounded-full bg-green-500 border border-background shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
-                  </span>
+                  <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-500 border-2 border-background animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
                 </div>
-
-                <div className="text-left hidden md:block">
-                  <p className="text-sm font-bold leading-tight group-hover:text-primary transition-colors">{user.name}</p>
-                  <p className="text-[11px] text-muted-foreground leading-tight font-medium">{user.email}</p>
+                <div className="text-left hidden lg:block overflow-hidden">
+                  <p className="text-sm font-bold text-foreground leading-tight truncate w-32">{user.name}</p>
+                  <p className="text-[10px] text-muted-foreground font-medium leading-tight truncate w-32">{user.email}</p>
                 </div>
               </Button>
             </DropdownMenuTrigger>
-
-            <DropdownMenuContent align="end" className="w-64 p-2 shadow-2xl border-muted/60 rounded-xl">
-              <div className="px-3 py-3 mb-2 rounded-lg bg-muted/30 border border-muted/10">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Status</p>
-                  <Badge variant="outline" className="h-4 px-1.5 text-[9px] bg-green-500/10 text-green-600 border-green-200 uppercase font-bold">Live</Badge>
+            
+            <DropdownMenuContent align="end" className="w-80 p-2 rounded-3xl border-muted/40 bg-popover shadow-2xl mt-2">
+              <div className="px-5 py-5 mb-2 rounded-2xl bg-muted/40 border border-muted/10">
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                    <Timer className="w-3.5 h-3.5 text-primary" /> Security Session
+                  </span>
+                  <Badge className={cn("h-4 px-1.5 text-[9px] font-black uppercase tracking-tighter", progress < 15 ? "bg-red-500/10 text-red-600" : "bg-green-500/10 text-green-600")}>Online</Badge>
                 </div>
-                <p className="text-xs font-bold text-foreground truncate">{user.email}</p>
-                <p className="text-[10px] text-muted-foreground font-medium italic mt-1 flex items-center gap-1">
-                  <History className="w-3 h-3" /> Logged in: {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
+                
+                <div className="space-y-2">
+                  <div className="flex justify-between items-end text-xs font-bold">
+                    <p className="text-[10px] text-muted-foreground font-bold">EXPIRES IN:</p>
+                    <p className={cn("font-mono text-sm tracking-tighter", progress < 15 && "text-red-500 animate-pulse")}>{timeLeft}</p>
+                  </div>
+                  <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                    <div className={cn("h-full transition-all duration-1000", progress < 15 ? "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" : "bg-primary")} style={{ width: `${progress}%` }} />
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-0.5">
-                <DropdownMenuItem onClick={() => navigate(`/users/edit/${user.id}`)} className="gap-3 cursor-pointer py-2.5 rounded-lg font-medium text-sm">
-                  <Edit className="w-4 h-4 opacity-70" /> Edit Account
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={logout} className="gap-3 cursor-pointer py-2.5 rounded-lg text-destructive font-medium text-sm">
-                  <LogOut className="w-4 h-4" /> Sign Out
-                </DropdownMenuItem>
+              <div className="p-1 gap-1 flex flex-col">
+                <Button variant="ghost" onClick={() => navigate(`/users/edit/${user.id}`)} className="justify-start gap-3 h-11 rounded-xl text-sm font-medium hover:bg-primary/5 hover:text-primary transition-all">
+                  <Edit className="w-4 h-4 opacity-70" /> Account Profile
+                </Button>
+                <Button variant="ghost" onClick={handleLogout} className="justify-start gap-3 h-11 rounded-xl text-sm font-bold text-destructive hover:bg-destructive/10 transition-all">
+                  <LogOut className="w-4 h-4" /> End Current Session
+                </Button>
               </div>
             </DropdownMenuContent>
           </DropdownMenu>

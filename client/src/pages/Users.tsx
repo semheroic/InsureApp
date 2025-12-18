@@ -93,11 +93,12 @@ const Users = () => {
       const res = await fetch(API_URL);
       const data = await res.json();
       const formatted: User[] = data.map((u: any) => ({
-        ...u,
-        initials: u.name.split(" ").map((n: string) => n[0]).join("").toUpperCase(),
-        joinDate: u.joinDate || u.joinDate,
-        profile_picture: u.profile_picture ? `${API_URL.replace("/users", "")}${u.profile_picture}` : undefined,
-      }));
+  ...u,
+  initials: u.name.split(" ").map((n: string) => n[0]).join("").toUpperCase(),
+  // FIX: Look for 'joined_date' from your SQL alias
+  joinDate: u.joined_date, 
+  profile_picture: u.profile_picture ? `http://localhost:5000${u.profile_picture}` : undefined,
+}));
       setUsers(formatted);
     } catch {
       toast({ title: "Error", description: "Failed to fetch users." });
@@ -272,7 +273,9 @@ const Users = () => {
                     <TableCell><Badge className={getRoleBadge(user.role)} variant="outline">{user.role}</Badge></TableCell>
                     {/* RESTORED STATUS AS IT WAS */}
                     <TableCell><Badge className={getStatusBadge(user.status)} variant="outline">{user.status}</Badge></TableCell>
-                    <TableCell className="text-muted-foreground">{user.joinDate}</TableCell>
+                    <TableCell className="text-muted-foreground">
+  {user.joinDate || "No Date"}
+</TableCell>
                     <TableCell className="text-right flex gap-2 justify-end">
                       <Button variant="ghost" size="icon" onClick={() => { setSelectedUser(user); setIsViewDialogOpen(true); }}><Eye className="w-4 h-4" /></Button>
                       <Button variant="ghost" size="icon" onClick={() => { setSelectedUser(user); setFormData({ name: user.name, email: user.email, phone: user.phone, role: user.role, status: user.status, password: "", profile_picture: null }); setIsEditDialogOpen(true); }}><Edit className="w-4 h-4" /></Button>

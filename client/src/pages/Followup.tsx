@@ -3,15 +3,28 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PolicyTable } from "@/components/Expiry/PolicyTable";
 import { useToast } from "@/hooks/use-toast";
-import { CheckCircle, Clock, XCircle, Search, RefreshCw } from "lucide-react";
+import { CheckCircle, Clock, XCircle, Search, RefreshCw, LayoutDashboard } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
-// NOTE: Assuming PolicyTable data structure is compatible with the fetched data
+/** Animation Variants */
+const containerVars = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.1 }
+  }
+};
+
+const itemVars = {
+  hidden: { y: 20, opacity: 0 },
+  visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 300, damping: 24 } }
+};
+
 interface PolicyFollowUp {
   id: number;
   plate: string;
   owner: string;
   followup_status: "confirmed" | "pending" | "missed";
-  // ... other policy fields
 }
 
 const API_FOLLOWUP = "http://localhost:5000/api/followup";
@@ -23,179 +36,167 @@ export default function FollowUps() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
 
-  /** ================= FETCH DATA ================= */
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(API_FOLLOWUP);
-      if (!res.ok) throw new Error("Failed to fetch policy follow-ups data.");
+      if (!res.ok) throw new Error("Failed to fetch data.");
       const json: PolicyFollowUp[] = await res.json();
       setData(json);
-      toast({ title: "Success", description: "Follow-up list updated.", duration: 2000 });
     } catch (err: any) {
-      console.error(err);
-      toast({ title: "Error Fetching Data", description: err.message, variant: "destructive" });
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
   }, [toast]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  /** ================= SEARCH FILTER & GROUPING ================= */
-  const { filteredData, grouped } = useMemo(() => {
-    // 1. Search Filter
-    const currentFilteredData = data.filter(
-      (p) =>
-        p.plate.toLowerCase().includes(search.toLowerCase()) ||
-        p.owner.toLowerCase().includes(search.toLowerCase())
+  const { grouped } = useMemo(() => {
+    const currentFiltered = data.filter(p => 
+      p.plate.toLowerCase().includes(search.toLowerCase()) || 
+      p.owner.toLowerCase().includes(search.toLowerCase())
     );
-
-    // 2. Grouping
-    const currentGrouped = {
-      confirmed: currentFilteredData.filter((p) => p.followup_status === "confirmed"),
-      pending: currentFilteredData.filter((p) => p.followup_status === "pending"),
-      missed: currentFilteredData.filter((p) => p.followup_status === "missed"),
+    return {
+      grouped: {
+        confirmed: currentFiltered.filter(p => p.followup_status === "confirmed"),
+        pending: currentFiltered.filter(p => p.followup_status === "pending"),
+        missed: currentFiltered.filter(p => p.followup_status === "missed"),
+      }
     };
-
-    return { filteredData: currentFilteredData, grouped: currentGrouped };
   }, [data, search]);
-  
-  const totalCount = data.length;
 
-  /**
-   * Status Card Component (Inline for Single File Structure)
-   */
-  const StatusCard = ({ title, count, icon: Icon, colorClass, className = "" }: { title: string, count: number, icon: React.ElementType, colorClass: string, className?: string }) => (
-    <Card className={`p-5 flex items-center justify-between shadow-lg hover:shadow-xl transition-shadow ${className}`}>
-      <div>
-        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-        <div className={`text-3xl font-bold mt-1 ${colorClass}`}>{count}</div>
-      </div>
-      <Icon className={`w-8 h-8 ${colorClass} opacity-70`} />
-    </Card>
-  );
-
-  /** ================= RENDER ================= */
   return (
-    <div className="space-y-8 p-6 bg-gray-50 dark:bg-gray-900 min-h-screen">
+    <motion.div 
+      initial="hidden"
+      animate="visible"
+      variants={containerVars}
+      className="space-y-8 p-6 bg-slate-50/50 dark:bg-slate-950 min-h-screen"
+    >
       
-      {/* ===== HEADER & REFRESH ===== */}
-      <div className="flex justify-between items-center border-b pb-4">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-         Policy Follow-Ups Dashboard
-        </h1>
-        <button 
+      {/* HEADER */}
+      <motion.div variants={itemVars} className="flex justify-between items-end border-b border-slate-200 dark:border-slate-800 pb-6">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+             <LayoutDashboard className="w-6 h-6 text-blue-600" />
+             <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+                Follow-Ups
+             </h1>
+          </div>
+          <p className="text-slate-500 text-sm font-medium">Manage and track renewal confirmations</p>
+        </div>
+        
+        <motion.button 
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={fetchData} 
           disabled={loading}
-          className={`p-2 rounded-full bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center gap-2 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-          aria-label="Refresh Data"
+          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 text-slate-600 hover:text-blue-600 transition-colors"
         >
           <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
 
-      {/* ===== STATUS CARDS ===== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {/* Confirmed Card */}
-        <StatusCard 
-          title="Confirmed Renewals" 
-          count={grouped.confirmed.length} 
-          icon={CheckCircle} 
-          colorClass="text-green-600"
-          className="col-span-1 lg:col-span-1 border-l-4 border-green-500"
-        />
-
-        {/* Pending Card */}
-        <StatusCard 
-          title="Pending Follow-Up" 
-          count={grouped.pending.length} 
-          icon={Clock} 
-          colorClass="text-yellow-600"
-          className="col-span-1 lg:col-span-1 border-l-4 border-yellow-500"
-        />
-
-        {/* Missed Card */}
-        <StatusCard 
-          title="Missed Follow-Up" 
-          count={grouped.missed.length} 
-          icon={XCircle} 
-          colorClass="text-red-600"
-          className="col-span-1 lg:col-span-1 border-l-4 border-red-500"
-        />
-      </div>
+      {/* STATUS CARDS */}
+      <motion.div variants={containerVars} className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatusCard title="Confirmed" count={grouped.confirmed.length} icon={CheckCircle} color="emerald" />
+        <StatusCard title="Pending" count={grouped.pending.length} icon={Clock} color="amber" />
+        <StatusCard title="Missed" count={grouped.missed.length} icon={XCircle} color="rose" />
+      </motion.div>
       
-      {/* ===== CONTROLS: SEARCH & TABS ===== */}
-      <Card className="p-4 bg-white dark:bg-gray-800 shadow-md">
-        
-        {/* Search Input */}
-        <div className="flex justify-end mb-4">
-          <div className="relative w-full md:w-1/3">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by Plate or Owner..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="border pl-10 pr-4 py-2 w-full rounded-md focus:ring-blue-500 focus:border-blue-500"
-            />
+      {/* MAIN CONTENT */}
+      <motion.div variants={itemVars}>
+        <Card className="overflow-hidden border-none shadow-xl shadow-slate-200/50 dark:shadow-none ring-1 ring-slate-200 dark:ring-slate-800">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-col md:flex-row justify-between gap-4">
+             <div className="relative w-full md:w-80">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search owner or plate..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border-none ring-1 ring-slate-200 dark:ring-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                />
+             </div>
           </div>
-        </div>
 
-        {/* Tabs List */}
-        <Tabs defaultValue="pending"> {/* Default to Pending/Actionable tab */}
-          <TabsList className="grid w-full grid-cols-3 h-auto">
-            <TabsTrigger value="confirmed" className="py-2">
-              <CheckCircle size={18} className="mr-2 text-green-600" /> 
-              Confirmed ({grouped.confirmed.length})
-            </TabsTrigger>
-            <TabsTrigger value="pending" className="py-2">
-              <Clock size={18} className="mr-2 text-yellow-600" /> 
-              Pending Action ({grouped.pending.length})
-            </TabsTrigger>
-            <TabsTrigger value="missed" className="py-2">
-              <XCircle size={18} className="mr-2 text-red-600" /> 
-              Missed ({grouped.missed.length})
-            </TabsTrigger>
-          </TabsList>
+          <Tabs defaultValue="pending" className="w-full">
+            <TabsList className="w-full justify-start rounded-none bg-transparent border-b border-slate-100 dark:border-slate-800 h-12 px-4 gap-6">
+              <TabTrigger value="confirmed" label="Confirmed" count={grouped.confirmed.length} color="text-emerald-600" />
+              <TabTrigger value="pending" label="Pending Action" count={grouped.pending.length} color="text-amber-600" />
+              <TabTrigger value="missed" label="Missed" count={grouped.missed.length} color="text-rose-600" />
+            </TabsList>
 
-          {/* ===== TAB CONTENT ===== */}
-          <div className="mt-4">
-            
-            <TabsContent value="confirmed">
-              <h3 className="text-xl font-semibold mb-3">Confirmed Renewals ({grouped.confirmed.length})</h3>
-              <PolicyTable
-                data={grouped.confirmed}
-                sendReminderEndpoint={API_REMINDER} 
-                refreshData={fetchData}
-                searchable={false} // Search is handled globally
-              />
-            </TabsContent>
-
-            <TabsContent value="pending">
-              <h3 className="text-xl font-semibold mb-3 text-yellow-600">Policies Requiring Follow-Up ({grouped.pending.length})</h3>
-              <PolicyTable
-                data={grouped.pending}
-                sendReminderEndpoint={API_REMINDER}
-                refreshData={fetchData}
-                searchable={false}
-              />
-            </TabsContent>
-
-            <TabsContent value="missed">
-              <h3 className="text-xl font-semibold mb-3 text-red-600">Missed Follow-Ups ({grouped.missed.length})</h3>
-              <PolicyTable
-                data={grouped.missed}
-                sendReminderEndpoint={API_REMINDER}
-                refreshData={fetchData}
-                searchable={false}
-              />
-            </TabsContent>
-          </div>
-        </Tabs>
-      </Card>
-    </div>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key="tab-content"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.2 }}
+                className="p-4"
+              >
+                <TabsContent value="confirmed" className="mt-0 outline-none">
+                  <PolicyTable data={grouped.confirmed} sendReminderEndpoint={API_REMINDER} refreshData={fetchData} searchable={false} />
+                </TabsContent>
+                <TabsContent value="pending" className="mt-0 outline-none">
+                  <PolicyTable data={grouped.pending} sendReminderEndpoint={API_REMINDER} refreshData={fetchData} searchable={false} />
+                </TabsContent>
+                <TabsContent value="missed" className="mt-0 outline-none">
+                  <PolicyTable data={grouped.missed} sendReminderEndpoint={API_REMINDER} refreshData={fetchData} searchable={false} />
+                </TabsContent>
+              </motion.div>
+            </AnimatePresence>
+          </Tabs>
+        </Card>
+      </motion.div>
+    </motion.div>
   );
+}
+
+/** * Sub-components with internal animations
+ */
+
+function StatusCard({ title, count, icon: Icon, color }: { title: string, count: number, icon: any, color: 'emerald' | 'amber' | 'rose' }) {
+  const colors = {
+    emerald: "text-emerald-600 bg-emerald-50 border-emerald-200",
+    amber: "text-amber-600 bg-amber-50 border-amber-200",
+    rose: "text-rose-600 bg-rose-50 border-rose-200",
+  };
+
+  return (
+    <motion.div variants={itemVars} whileHover={{ y: -5 }} className="group">
+      <Card className={cn("p-6 border-none shadow-sm ring-1 ring-slate-200 dark:ring-slate-800 flex items-center justify-between")}>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{title}</p>
+          <motion.div 
+            initial={{ scale: 0.5 }} 
+            animate={{ scale: 1 }} 
+            className="text-4xl font-black mt-1 text-slate-900 dark:text-white"
+          >
+            {count}
+          </motion.div>
+        </div>
+        <div className={cn("p-3 rounded-2xl transition-colors", colors[color])}>
+          <Icon className="w-8 h-8" strokeWidth={2.5} />
+        </div>
+      </Card>
+    </motion.div>
+  );
+}
+
+function TabTrigger({ value, label, count, color }: { value: string, label: string, count: number, color: string }) {
+  return (
+    <TabsTrigger 
+      value={value} 
+      className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-blue-600 rounded-none px-0 pb-3 mt-1 font-semibold text-slate-500 transition-all"
+    >
+      {label} <span className={cn("ml-2 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px]", color)}>{count}</span>
+    </TabsTrigger>
+  );
+}
+
+// Utility function for classes
+function cn(...classes: any[]) {
+  return classes.filter(Boolean).join(' ');
 }

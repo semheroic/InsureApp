@@ -262,7 +262,7 @@ app.get("/users/:id", async (req, res) => {
   try {
     const users = await query(
       `SELECT id, profile_picture, name, email, phone, role, status,
-      DATE_FORMAT(join_date,'%Y-%m-%d') as joinDate,
+      DATE_FORMAT(join_date,'%Y-%m-%d') as joined_date,
       DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s') as created_at,
       DATE_FORMAT(updated_at,'%Y-%m-%d %H:%i:%s') as updated_at
       FROM users WHERE id=?`,

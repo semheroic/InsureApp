@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { 
   Send, CheckCircle, Clock, XCircle, FileX, 
-  Search, Hash, Phone, X, RotateCcw 
+  Search, X, RotateCcw, User, Shield 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,6 @@ import { cn } from "@/lib/utils";
 export const PolicyTable = ({
   data,
   followUpEndpoint,
-  sendReminderEndpoint,
   refreshData,
   showOverdue,
   searchable = true,
@@ -33,7 +32,8 @@ export const PolicyTable = ({
     if (!term) return data;
     return data.filter((p: any) => 
       String(p.plate).toLowerCase().includes(term) || 
-      String(p.contact).toLowerCase().includes(term)
+      String(p.contact).toLowerCase().includes(term) ||
+      String(p.owner).toLowerCase().includes(term)
     );
   }, [data, searchQuery]);
 
@@ -45,7 +45,7 @@ export const PolicyTable = ({
         body: JSON.stringify({ policy_id: policy.id, followup_status: status }),
       });
       if (res.ok) {
-        toast({ title: "Updated", description: `Policy marked as ${status}` });
+        toast({ title: "Status Updated", description: `Policy ${policy.plate} is now ${status}` });
         refreshData?.();
       }
     } catch (err) {
@@ -59,7 +59,7 @@ export const PolicyTable = ({
         method: "DELETE"
       });
       if (res.ok) {
-        toast({ title: "Status Cleared" });
+        toast({ title: "Status Reset" });
         refreshData?.();
       }
     } catch (err) {
@@ -68,36 +68,37 @@ export const PolicyTable = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {searchable && (
-        <div className="relative flex items-center max-w-sm group">
-          <Search className="absolute left-3 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+        <div className="relative flex items-center max-w-md group">
+          <Search className="absolute left-4 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
           <Input
-            placeholder="Search by plate or contact..."
-            className="pl-9 pr-9 border-slate-200 focus-visible:ring-blue-500"
+            placeholder="Search records (Plate, Owner, or Contact)..."
+            className="pl-11 h-12 bg-card border-muted-foreground/20 rounded-2xl shadow-sm focus-visible:ring-primary focus-visible:border-primary text-base"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
           {searchQuery && (
-            <X 
-              className="absolute right-3 h-4 w-4 cursor-pointer text-slate-400 hover:text-red-500" 
+            <button 
+              className="absolute right-4 p-1 hover:bg-muted rounded-full transition-colors"
               onClick={() => setSearchQuery("")} 
-            />
+            >
+              <X className="h-4 w-4 text-muted-foreground" />
+            </button>
           )}
         </div>
       )}
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="rounded-[24px] border border-muted/40 bg-card shadow-xl overflow-hidden backdrop-blur-md">
         <Table>
           <TableHeader>
-            <TableRow className="bg-slate-50/50">
-              <TableHead className="font-bold text-slate-600 uppercase text-[11px] tracking-wider">Plate</TableHead>
-              <TableHead className="font-bold text-slate-600 uppercase text-[11px] tracking-wider">Owner</TableHead>
-              <TableHead className="font-bold text-slate-600 uppercase text-[11px] tracking-wider">Company</TableHead>
-              <TableHead className="font-bold text-slate-600 uppercase text-[11px] tracking-wider">Expiry</TableHead>
-              {showOverdue && <TableHead className="font-bold text-slate-600 uppercase text-[11px] tracking-wider">Overdue</TableHead>}
-              <TableHead className="font-bold text-slate-600 uppercase text-[11px] tracking-wider">Contact</TableHead>
-              <TableHead className="text-right font-bold text-slate-600 uppercase text-[11px] tracking-wider">Actions</TableHead>
+            <TableRow className="bg-muted/30 border-b border-muted/50 hover:bg-muted/30">
+              <TableHead className="py-5 font-black text-[10px] uppercase tracking-[0.2em] text-muted-foreground pl-8">Vehicle Plate</TableHead>
+              <TableHead className="py-5 font-black text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Policy Holder</TableHead>
+              <TableHead className="py-5 font-black text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Provider</TableHead>
+              <TableHead className="py-5 font-black text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">Expiry</TableHead>
+              {showOverdue && <TableHead className="py-5 font-black text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">Status</TableHead>}
+              <TableHead className="py-5 font-black text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-right pr-8">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -109,95 +110,98 @@ export const PolicyTable = ({
                   <TableRow 
                     key={policy.id} 
                     className={cn(
-                      "transition-all duration-300",
-                      // ROW MARKERS (Persistence logic)
-                      status === "confirmed" && "bg-blue-50/80 hover:bg-blue-100/80 dark:bg-blue-900/10",
-                      status === "pending" && "bg-emerald-50/80 hover:bg-emerald-100/80 dark:bg-emerald-900/10",
-                      status === "missed" && "bg-red-50/80 hover:bg-red-100/80 dark:bg-red-900/10"
+                      "group transition-all duration-200 border-b border-muted/20",
+                      status === "confirmed" && "bg-blue-500/5 hover:bg-blue-500/10",
+                      status === "pending" && "bg-emerald-500/5 hover:bg-emerald-500/10",
+                      status === "missed" && "bg-rose-500/5 hover:bg-rose-500/10"
                     )}
                   >
-                    <TableCell className="font-mono font-bold text-slate-900 uppercase">{policy.plate}</TableCell>
-                    <TableCell className="font-medium text-slate-700">{policy.owner}</TableCell>
-                    <TableCell><Badge variant="outline" className="font-semibold text-[10px]">{policy.company}</Badge></TableCell>
-                    <TableCell className="text-slate-600">{policy.expiryDate}</TableCell>
+                    {/* PLATE - High Impact Font */}
+                    <TableCell className="pl-8 py-5">
+                      <span className="text-xl font-black tracking-tighter text-foreground font-mono bg-muted/40 px-3 py-1 rounded-lg border border-muted-foreground/10">
+                        {policy.plate}
+                      </span>
+                    </TableCell>
+
+                    {/* OWNER */}
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                          <User size={14} className="text-muted-foreground" />
+                          {policy.owner}
+                        </span>
+                        <span className="text-xs text-muted-foreground font-mono mt-0.5">{policy.contact}</span>
+                      </div>
+                    </TableCell>
+
+                    {/* COMPANY */}
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Shield size={14} className="text-primary/60" />
+                        <span className="font-bold text-xs uppercase tracking-wider">{policy.company}</span>
+                      </div>
+                    </TableCell>
+
+                    {/* EXPIRY */}
+                    <TableCell className="text-center">
+                      <span className="text-sm font-bold text-muted-foreground">{policy.expiryDate}</span>
+                    </TableCell>
+
+                    {/* OVERDUE - Large Font */}
                     {showOverdue && (
-                      <TableCell>
-                        <Badge className="bg-red-600 text-white border-none">{policy.days_overdue} days</Badge>
+                      <TableCell className="text-center">
+                        <div className="flex flex-col items-center">
+                          <span className="text-2xl font-black text-rose-600 tracking-tighter leading-none">
+                            {policy.days_overdue}
+                          </span>
+                          <span className="text-[9px] font-black uppercase text-rose-600/60 mt-1">Days Overdue</span>
+                        </div>
                       </TableCell>
                     )}
-                    <TableCell className="text-slate-600 font-mono text-xs">{policy.contact}</TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1.5 items-center">
-                        
-                        {/* CLEAR STATUS BUTTON */}
+
+                    {/* ACTIONS */}
+                    <TableCell className="pr-8">
+                      <div className="flex justify-end gap-2 items-center">
                         {status && (
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="h-8 w-8 text-slate-400 hover:text-slate-900 hover:bg-slate-200 transition-colors"
+                            className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all"
                             onClick={() => handleClear(policy.id)}
-                            title="Reset Status"
+                            title="Reset"
                           >
-                            <RotateCcw size={14} />
+                            <RotateCcw size={16} />
                           </Button>
                         )}
 
-                        {/* BLUE - CONFIRMED */}
-                        <Button
-                          size="icon"
-                          variant={status === "confirmed" ? "default" : "outline"}
-                          className={cn(
-                            "h-8 w-8 transition-transform active:scale-95",
-                            status === "confirmed" 
-                              ? "bg-blue-600 hover:bg-blue-700 text-white shadow-md scale-105 border-transparent" 
-                              : "text-blue-600 border-blue-200 hover:bg-blue-50"
-                          )}
-                          onClick={() => handleFollowUp(policy, "confirmed")}
-                        >
-                          <CheckCircle size={16} />
-                        </Button>
+                        <ActionButton 
+                          icon={CheckCircle} 
+                          active={status === "confirmed"} 
+                          color="blue" 
+                          onClick={() => handleFollowUp(policy, "confirmed")} 
+                        />
+                        <ActionButton 
+                          icon={Clock} 
+                          active={status === "pending"} 
+                          color="emerald" 
+                          onClick={() => handleFollowUp(policy, "pending")} 
+                        />
+                        <ActionButton 
+                          icon={XCircle} 
+                          active={status === "missed"} 
+                          color="rose" 
+                          onClick={() => handleFollowUp(policy, "missed")} 
+                        />
 
-                        {/* EMERALD - PENDING */}
-                        <Button
-                          size="icon"
-                          variant={status === "pending" ? "default" : "outline"}
-                          className={cn(
-                            "h-8 w-8 transition-transform active:scale-95",
-                            status === "pending" 
-                              ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md scale-105 border-transparent" 
-                              : "text-emerald-600 border-emerald-200 hover:bg-emerald-50"
-                          )}
-                          onClick={() => handleFollowUp(policy, "pending")}
-                        >
-                          <Clock size={16} />
-                        </Button>
-
-                        {/* RED - MISSED */}
-                        <Button
-                          size="icon"
-                          variant={status === "missed" ? "default" : "outline"}
-                          className={cn(
-                            "h-8 w-8 transition-transform active:scale-95",
-                            status === "missed" 
-                              ? "bg-red-600 hover:bg-red-700 text-white shadow-md scale-105 border-transparent" 
-                              : "text-red-600 border-red-200 hover:bg-red-50"
-                          )}
-                          onClick={() => handleFollowUp(policy, "missed")}
-                        >
-                          <XCircle size={16} />
-                        </Button>
-
-                        <div className="w-[1px] h-4 bg-slate-200 mx-1" />
+                        <div className="w-[1px] h-6 bg-muted mx-1" />
                         
                         <Button 
                           size="icon" 
-                          variant="ghost" 
-                          className="h-8 w-8 text-slate-400 hover:text-blue-600"
-                          onClick={() => {
-                            toast({ title: "Reminder", description: `Reminder sent to ${policy.contact}` });
-                          }}
+                          variant="secondary" 
+                          className="h-9 w-9 rounded-xl shadow-sm hover:bg-primary hover:text-primary-foreground transition-all"
+                          onClick={() => toast({ title: "Reminder Sent", description: `Notified ${policy.contact}` })}
                         >
-                          <Send size={14} />
+                          <Send size={16} />
                         </Button>
                       </div>
                     </TableCell>
@@ -206,10 +210,10 @@ export const PolicyTable = ({
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="h-40 text-center">
-                  <div className="flex flex-col items-center justify-center text-slate-400">
-                    <FileX size={32} className="mb-2 opacity-20" />
-                    <p className="text-sm font-medium">No records matching your search</p>
+                <TableCell colSpan={7} className="h-64 text-center">
+                  <div className="flex flex-col items-center justify-center opacity-40">
+                    <FileX size={48} className="mb-4" />
+                    <p className="text-lg font-black uppercase tracking-widest">No matching records</p>
                   </div>
                 </TableCell>
               </TableRow>
@@ -218,5 +222,28 @@ export const PolicyTable = ({
         </Table>
       </div>
     </div>
+  );
+};
+
+// Helper Action Button Component
+const ActionButton = ({ icon: Icon, active, color, onClick }: any) => {
+  const colorMap: any = {
+    blue: active ? "bg-blue-600 text-white shadow-blue-200" : "text-blue-600 bg-blue-500/10 hover:bg-blue-500/20",
+    emerald: active ? "bg-emerald-600 text-white shadow-emerald-200" : "text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20",
+    rose: active ? "bg-rose-600 text-white shadow-rose-200" : "text-rose-600 bg-rose-500/10 hover:bg-rose-500/20",
+  };
+
+  return (
+    <Button
+      size="icon"
+      className={cn(
+        "h-9 w-9 rounded-xl transition-all duration-300 active:scale-90 border-none",
+        active && "shadow-lg scale-110 ring-2 ring-background",
+        colorMap[color]
+      )}
+      onClick={onClick}
+    >
+      <Icon size={18} strokeWidth={2.5} />
+    </Button>
   );
 };

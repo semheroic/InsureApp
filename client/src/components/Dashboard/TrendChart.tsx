@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { Card } from "@/components/ui/card";
 import {
-  LineChart,
-  Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -20,129 +20,110 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type TrendDataItem = {
-  label: string;
-  created: number;
-  renewed: number;
-};
-
 export const TrendChart = () => {
-  const [trendData, setTrendData] = useState<TrendDataItem[]>([]);
+  const [trendData, setTrendData] = useState<any[]>([]);
   const [period, setPeriod] = useState<"week" | "month" | "year">("month");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
     setLoading(true);
-    setError(null);
-
     axios
-      .get(`http://localhost:5000/api/trends?period=${period}`, {
-        signal: controller.signal,
-      })
+      .get(`http://localhost:5000/api/trends?period=${period}`, { withCredentials: true })
       .then((res) => {
-        let payload = res.data;
-        let payloadArray: any[] = [];
-
-        // Normalize different API shapes
-        if (Array.isArray(payload)) {
-          payloadArray = payload;
-        } else if (payload.trends && Array.isArray(payload.trends)) {
-          payloadArray = payload.trends;
-        } else if (payload.data && Array.isArray(payload.data)) {
-          payloadArray = payload.data;
-        } else if (typeof payload === "object") {
-          payloadArray = Object.keys(payload).map((key) => ({
-            label: key,
-            created: Number(payload[key]?.created ?? 0),
-            renewed: Number(payload[key]?.renewed ?? 0),
-          }));
-        }
-
-        // Map to consistent shape
-        const normalized: TrendDataItem[] = payloadArray.map((d: any) => ({
-          label: d.label || d.date || d.day || d.month || d.key || "",
-          created: Number(d.created ?? d.cnt ?? d.count ?? 0),
-          renewed: Number(d.renewed ?? d.renewedCount ?? 0),
+        const payload = res.data.trends || res.data || [];
+        const normalized = payload.map((d: any) => ({
+          label: d.label || d.month || d.date || d.day || "N/A",
+          created: Number(d.created || d.count || 0),
+          renewed: Number(d.renewed || 0),
         }));
-
         setTrendData(normalized);
-        setLoading(false);
       })
-      .catch((err) => {
-        if (axios.isCancel(err)) return;
-        console.error("Trend API Error:", err);
-        setError("Failed to load trend data");
-        setLoading(false);
-      });
-
-    return () => controller.abort();
+      .finally(() => setLoading(false));
   }, [period]);
 
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-foreground">Policy Trends</h3>
-        <Select value={period} onValueChange={setPeriod}>
-          <SelectTrigger className="w-32">
-            <SelectValue placeholder="Select period" />
+    <Card className="p-6 border-none shadow-none bg-transparent">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h3 className="text-xl font-bold tracking-tight">Performance Trends</h3>
+          <p className="text-xs text-muted-foreground">Detailed axis view of policy metrics</p>
+        </div>
+        
+        <Select value={period} onValueChange={(v: any) => setPeriod(v)}>
+          <SelectTrigger className="w-32 rounded-xl">
+            <SelectValue placeholder="Period" />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="week">Week</SelectItem>
-            <SelectItem value="month">Month</SelectItem>
-            <SelectItem value="year">Year</SelectItem>
+          <SelectContent className="rounded-xl">
+            <SelectItem value="week">Weekly</SelectItem>
+            <SelectItem value="month">Monthly</SelectItem>
+            <SelectItem value="year">Yearly</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading chart data...</p>
-      ) : error ? (
-        <p className="text-sm text-destructive">{error}</p>
-      ) : trendData.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No trend data available.</p>
-      ) : (
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={trendData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+      <div className="h-[350px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart 
+            data={trendData} 
+            margin={{ top: 10, right: 10, left: 0, bottom: 20 }} // Bottom margin for X-axis labels
+            barGap={8}
+          >
+            {/* GRID: Only horizontal lines for better readability */}
+            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--muted-foreground)/0.2)" />
+
+            {/* X-AXIS: Positioned clearly at the bottom */}
             <XAxis
               dataKey="label"
-              stroke="hsl(var(--muted-foreground))"
-              fontSize={12}
+              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.4)', strokeWidth: 1 }}
+              tickLine={false}
+              tick={{ fill: 'hsl(var(--foreground))', fontSize: 12, fontWeight: 500 }}
+              dy={15} // Pushes labels down away from the bars
+              interval={0} // Shows all labels if space allows
             />
+
+            {/* Y-AXIS: Clearly marked with integers */}
             <YAxis
-              domain={[0, "auto"]}
-              stroke="hsl(var(--muted-foreground))"
-              fontSize={12}
+              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.4)', strokeWidth: 1 }}
+              tickLine={false}
+              tick={{ fill: 'hsl(var(--foreground))', fontSize: 12, fontWeight: 500 }}
+              dx={-10} // Moves numbers left away from the grid
+              allowDecimals={false} // Clean integers for policy counts
             />
+
             <Tooltip
+              cursor={{ fill: "hsl(var(--muted)/0.15)" }}
               contentStyle={{
                 backgroundColor: "hsl(var(--card))",
                 border: "1px solid hsl(var(--border))",
-                borderRadius: "8px",
+                borderRadius: "12px",
+                boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)"
               }}
             />
-            <Legend />
-            <Line
-              type="monotone"
+
+            <Legend 
+              verticalAlign="top" 
+              align="right" 
+              iconType="circle" 
+              wrapperStyle={{ paddingBottom: '30px' }} 
+            />
+            
+            <Bar
               dataKey="created"
-              stroke="hsl(var(--chart-1))"
-              strokeWidth={2}
-              dot={{ r: 4 }}
-              name="Created"
+              name="New Policies"
+              fill="hsl(var(--primary))"
+              radius={[4, 4, 0, 0]}
+              barSize={24}
             />
-            <Line
-              type="monotone"
+            <Bar
               dataKey="renewed"
-              stroke="hsl(var(--chart-2))"
-              strokeWidth={2}
-              dot={{ r: 4 }}
               name="Renewed"
+              fill="#10b981"
+              radius={[4, 4, 0, 0]}
+              barSize={24}
             />
-          </LineChart>
+          </BarChart>
         </ResponsiveContainer>
-      )}
+      </div>
     </Card>
   );
 };

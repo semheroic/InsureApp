@@ -87,9 +87,12 @@ const formatRwandaNumber = number => {
 
 const logSMS = async (to, message, cost = 0, status = "pending", messageId = "N/A") => {
   try {
+    // If API returns 0.00, we can use a standard local rate (e.g., 15 RWF) for reporting
+    const finalCost = (parseFloat(cost) === 0) ? 15.00 : parseFloat(cost);
+
     await query(
       "INSERT INTO sms_logs (phone_number, message, message_id, cost, delivery_status) VALUES (?, ?, ?, ?, ?)",
-      [to, message, messageId, cost, status]
+      [to, message, messageId, finalCost, status]
     );
   } catch (err) {
     console.error("SMS log error:", err.message);
@@ -577,7 +580,8 @@ app.get("/api/expiry-report", async (req, res) => {
   res.json({ today, week, month, expired });
 });
 // ======================== SMS LOGS ========================
-app.get("/sms/logs", isAuthenticated, async (req,res)=>{ const logs = await query("SELECT id, phone_number, message, delivery_status, is_read, created_at FROM sms_logs ORDER BY created_at DESC LIMIT 20"); const unread = logs.filter(l=>l.is_read===0).length; res.json({ logs, unread }); });
+app.get("/sms/logs", isAuthenticated, async (req,res)=>{ // Added 'cost' to the SELECT statement
+const logs = await query("SELECT id, phone_number, message, cost, delivery_status, is_read, created_at FROM sms_logs ORDER BY created_at DESC LIMIT 20"); const unread = logs.filter(l=>l.is_read===0).length; res.json({ logs, unread }); });
 app.put("/sms/mark-read", isAuthenticated, async (req,res)=>{ await query("UPDATE sms_logs SET is_read = 1 WHERE is_read = 0"); res.json({ message:"Notifications marked as read" }); });
 app.put("/sms/mark-unread/:id", isAuthenticated, async (req,res)=>{ await query("UPDATE sms_logs SET is_read=0 WHERE id=?",[req.params.id]); res.json({ message:"Marked as unread" }); });
 app.delete("/sms/delete/:id", isAuthenticated, async (req,res)=>{ await query("DELETE FROM sms_logs WHERE id=?",[req.params.id]); res.json({ message:"Deleted" }); });
@@ -822,6 +826,46 @@ const backfillPolicyHistory = async () => {
 
 // Call the async function
 backfillPolicyHistory();
+//send message 
+app.post("/api/policies/broadcast", async (req, res) => {
+  const { template, recipients } = req.body;
+
+  if (!template || !recipients || !recipients.length) {
+    return res.status(400).json({ error: "No recipients or message content provided." });
+  }
+
+  // Tracking results for the response
+  let sentCount = 0;
+  let errorCount = 0;
+
+  try {
+    // Process messages in parallel for speed
+    await Promise.all(recipients.map(async (client) => {
+      try {
+        // Replace tags with actual data
+        const personalizedMessage = template
+          .replace(/{owner}/g, client.owner || "Client")
+          .replace(/{plate}/g, client.plate || "your vehicle")
+          .replace(/{days}/g, client.days || "0");
+
+        // Use your existing sendSMS helper
+        const result = await sendSMS(client.contact, personalizedMessage);
+        if (result.success) sentCount++;
+        else errorCount++;
+      } catch (err) {
+        console.error(`Failed to send to ${client.contact}:`, err.message);
+        errorCount++;
+      }
+    }));
+
+    res.json({
+      message: "Broadcast process completed",
+      summary: { total: recipients.length, successful: sentCount, failed: errorCount }
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Critical broadcast failure: " + err.message });
+  }
+});
 //===================== START SERVER ========================
 const PORT = process.env.PORT || 5000;
 app.listen(PORT,()=>console.log(`🚀 Server running on port ${PORT}`));

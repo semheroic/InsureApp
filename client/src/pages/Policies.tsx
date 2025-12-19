@@ -93,7 +93,38 @@ const Policies = () => {
     expiryDate: "",
     contact: "",
   });
+/* message  */
+const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
+const [bulkMessage, setBulkMessage] = useState("");
+const [isSending, setIsSending] = useState(false);  
+const handleSendMessage = async () => {
+  setIsSending(true);
+  try {
+    // We send the array of all currently filtered/listed policies
+    const payload = {
+      template: bulkMessage,
+      recipients: filteredPolicies.map(p => ({
+        contact: p.contact,
+        owner: p.owner,
+        plate: p.plate,
+        days: p.days_remaining
+      }))
+    };
 
+    const { data } = await axios.post("http://localhost:5000/api/policies/broadcast", payload);
+    
+    toast({ 
+      title: "Broadcast Complete", 
+      description: `Sent ${data.summary.successful} messages successfully.` 
+    });
+    setIsMessageDialogOpen(false);
+  } catch (error) {
+    toast({ title: "Error", description: "Failed to send broadcast", variant: "destructive" });
+  } finally {
+    setIsSending(false);
+  }
+};
+// dialoge
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -250,16 +281,23 @@ const validateRWPhone = (phone: string) => {
   /* ---------------- UI ---------------- */
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Insurance Policies</h1>
-          <p className="text-muted-foreground">Manage all vehicle insurance policies</p>
-        </div>
-        <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}>
-          <Plus className="w-4 h-4" /> Add Policy
-        </Button>
-      </div>
+            {/* Header */}
+<div className="flex justify-between items-center">
+  <div>
+    <h1 className="text-3xl font-bold">Insurance Policies</h1>
+    <p className="text-muted-foreground">Manage all vehicle insurance policies</p>
+  </div>
+  <div className="flex gap-2">
+    {/* NEW MESSAGE BUTTON */}
+    <Button variant="outline" className="gap-2" onClick={() => setIsMessageDialogOpen(true)}>
+      <Search className="w-4 h-4" /> Broadcast SMS
+    </Button>
+    <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}>
+      <Plus className="w-4 h-4" /> Add Policy
+    </Button>
+  </div>
+</div>
+
 
       {/* Filters & Table */}
       <Card className="p-6">
@@ -605,6 +643,79 @@ const validateRWPhone = (phone: string) => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+  {/* ===== PROFESSIONAL BULK MESSAGE DIALOG ===== */}
+<Dialog open={isMessageDialogOpen} onOpenChange={setIsMessageDialogOpen}>
+  <DialogContent className="sm:max-w-[500px]">
+    <DialogHeader>
+      <div className="flex items-center gap-2">
+        <div className="p-2 bg-primary/10 rounded-full">
+          <Search className="w-5 h-5 text-primary" />
+        </div>
+        <DialogTitle className="text-xl">Broadcast SMS</DialogTitle>
+      </div>
+      <DialogDescription className="pt-2">
+        You are sending a message to <span className="font-bold text-foreground">{filteredPolicies.length} recipients</span>. 
+        Filters currently applied: <Badge variant="secondary" className="ml-1 uppercase text-[10px]">{statusFilter}</Badge>
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="space-y-4 py-4">
+      {/* Quick Tags Info */}
+      <div className="bg-muted/50 p-3 rounded-lg border border-border">
+        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Available Personalization Tags</Label>
+        <div className="flex gap-2 mt-2">
+          {['{owner}', '{plate}', '{days}'].map(tag => (
+            <code key={tag} className="px-1.5 py-0.5 rounded bg-background border text-xs font-mono text-primary">
+              {tag}
+            </code>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-2">
+        <div className="flex justify-between items-center">
+          <Label htmlFor="message">Message Content</Label>
+          <span className={`text-[10px] font-medium ${bulkMessage.length > 160 ? 'text-warning' : 'text-muted-foreground'}`}>
+            {bulkMessage.length} / 160 characters (1 SMS)
+          </span>
+        </div>
+        <textarea
+          id="message"
+          className="flex min-h-[150px] w-full rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed transition-all resize-none"
+          placeholder="e.g. Dear {owner}, your insurance for {plate} expires in {days} days. Please renew with SORAS."
+          value={bulkMessage}
+          onChange={(e) => setBulkMessage(e.target.value)}
+        />
+      </div>
+
+      <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-100 dark:bg-blue-950/30 dark:border-blue-900">
+        <div className="mt-0.5 text-blue-600 italic text-xs">
+          💡 Pro-tip: Keep messages under 160 characters to avoid double billing from Africa's Talking.
+        </div>
+      </div>
+    </div>
+
+    <DialogFooter className="gap-2 sm:gap-0">
+      <Button variant="ghost" onClick={() => setIsMessageDialogOpen(false)}>
+        Cancel
+      </Button>
+      <Button 
+        onClick={handleSendMessage} 
+        disabled={isSending || !bulkMessage.trim()}
+        className="px-8 shadow-lg shadow-primary/20"
+      >
+        {isSending ? (
+          <span className="flex items-center gap-2">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Sending...
+          </span>
+        ) : (
+          "Send Broadcast"
+        )}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
     </div>
   );
 };

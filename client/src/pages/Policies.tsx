@@ -41,6 +41,9 @@ import {
   TableCell,
 } from "@/components/ui/table";
 
+// Global config to ensure cookies are sent with every request
+axios.defaults.withCredentials = true;
+
 type Policy = {
   id: number;
   plate: string;
@@ -51,9 +54,12 @@ type Policy = {
   contact: string;
   status: "Active" | "Expiring Soon" | "Expired" | "Renewed";
   days_remaining: number;
+  timeToStart?: any;
+  timeToEnd?: any;
 };
 
 const API_URL = "http://localhost:5000/policies";
+const AUTH_URL = "http://localhost:5000/auth/me";
 
 /* ---------------- HELPERS ---------------- */
 const daysBetween = (date: string) => {
@@ -72,10 +78,13 @@ const getStatusBadge = (status: string) => {
   return variants[status] || "";
 };
 
-/* ---------------- COMPONENT ---------------- */
 const Policies = () => {
   const { toast } = useToast();
 
+  /* ---------------- ROLE STATE ---------------- */
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  /* ---------------- COMPONENT STATES ---------------- */
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -93,59 +102,42 @@ const Policies = () => {
     expiryDate: "",
     contact: "",
   });
-/* message  */
-const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
-const [bulkMessage, setBulkMessage] = useState("");
-const [isSending, setIsSending] = useState(false);  
-const handleSendMessage = async () => {
-  setIsSending(true);
-  try {
-    // We send the array of all currently filtered/listed policies
-    const payload = {
-      template: bulkMessage,
-      recipients: filteredPolicies.map(p => ({
-        contact: p.contact,
-        owner: p.owner,
-        plate: p.plate,
-        days: p.days_remaining
-      }))
-    };
 
-    const { data } = await axios.post("http://localhost:5000/api/policies/broadcast", payload);
-    
-    toast({ 
-      title: "Broadcast Complete", 
-      description: `Sent ${data.summary.successful} messages successfully.` 
-    });
-    setIsMessageDialogOpen(false);
-  } catch (error) {
-    toast({ title: "Error", description: "Failed to send broadcast", variant: "destructive" });
-  } finally {
-    setIsSending(false);
-  }
-};
-// dialoge
+  const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState("");
+  const [isSending, setIsSending] = useState(false);
+
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  /* ---------------- FETCH ---------------- */
-  const fetchPolicies = async () => {
+  // Helper logic for permissions
+  const roleClean = userRole?.toLowerCase();
+  const isAdmin = roleClean === "admin";
+  const isManager = roleClean === "manager";
+  // Allow both Admin and Manager to Add/Edit
+  const canModify = isAdmin || isManager;
+
+  /* ---------------- AUTH & FETCH ---------------- */
+  const checkAuthAndFetch = async () => {
     setLoading(true);
     try {
+      const authRes = await axios.get(AUTH_URL);
+      setUserRole(authRes.data.role);
+
       const { data } = await axios.get(API_URL);
       setPolicies(
         data.map((p: any) => ({
           ...p,
           days_remaining: daysBetween(p.expiry_date),
-          status: p.status, // directly from backend
+          status: p.status,
         }))
       );
-    } catch {
+    } catch (err: any) {
       toast({
         title: "Error",
-        description: "Failed to load policies",
+        description: err.response?.status === 401 ? "Please login again" : "Failed to load data",
         variant: "destructive",
       });
     } finally {
@@ -154,7 +146,7 @@ const handleSendMessage = async () => {
   };
 
   useEffect(() => {
-    fetchPolicies();
+    checkAuthAndFetch();
   }, []);
 
   /* ---------------- FILTERS ---------------- */
@@ -177,51 +169,62 @@ const handleSendMessage = async () => {
     });
   }, [policies, searchQuery, statusFilter, companyFilter]);
 
-  const totalPages = Math.ceil(filteredPolicies.length / itemsPerPage);
   const paginatedPolicies = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredPolicies.slice(start, start + itemsPerPage);
   }, [filteredPolicies, currentPage]);
-const validateRWPhone = (phone: string) => {
-  // Matches: 078..., 079..., 072..., 073... or +25078... etc.
-  // Must be exactly 10 digits (if starting with 0) or 13 (if starting with +250)
-  const regex = /^(\+?250|0)?(7[2389])[0-9]{7}$/;
-  return regex.test(phone);
-};
-  /* ---------------- ADD ---------------- */
+
+  const validateRWPhone = (phone: string) => {
+    const regex = /^(\+?250|0)?(7[2389])[0-9]{7}$/;
+    return regex.test(phone);
+  };
+
+  /* ---------------- ACTIONS ---------------- */
+  const handleSendMessage = async () => {
+    setIsSending(true);
+    try {
+      const payload = {
+        template: bulkMessage,
+        recipients: filteredPolicies.map(p => ({
+          contact: p.contact,
+          owner: p.owner,
+          plate: p.plate,
+          days: p.days_remaining
+        }))
+      };
+      const { data } = await axios.post("http://localhost:5000/api/policies/broadcast", payload);
+      toast({ title: "Broadcast Complete", description: `Sent ${data.summary.successful} messages.` });
+      setIsMessageDialogOpen(false);
+      setBulkMessage("");
+    } catch {
+      toast({ title: "Error", description: "Failed to send broadcast", variant: "destructive" });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const handleAdd = async () => {
-  // 1. Validate Phone Number
-  if (!validateRWPhone(formData.contact)) {
-    toast({
-      title: "Invalid Phone Number",
-      description: "Please enter a valid Rwandan number (e.g., 078... or +250...)",
-      variant: "destructive",
-    });
-    return; // Stop execution
-  }
+    if (!validateRWPhone(formData.contact)) {
+      return toast({ title: "Invalid Phone", description: "Use Rwandan format (078...)", variant: "destructive" });
+    }
+    try {
+      await axios.post(API_URL, {
+        plate: formData.plate,
+        owner: formData.owner,
+        company: formData.company,
+        start_date: formData.startDate,
+        expiry_date: formData.expiryDate,
+        contact: formData.contact,
+      });
+      checkAuthAndFetch();
+      setIsAddDialogOpen(false);
+      toast({ title: "Added", description: "Policy created" });
+      setFormData({ plate: "", owner: "", company: "SORAS", startDate: "", expiryDate: "", contact: "" });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.response?.data?.error || "Failed to add", variant: "destructive" });
+    }
+  };
 
-  try {
-    await axios.post(API_URL, {
-      plate: formData.plate,
-      owner: formData.owner,
-      company: formData.company,
-      start_date: formData.startDate,
-      expiry_date: formData.expiryDate,
-      contact: formData.contact,
-    });
-    fetchPolicies();
-    setIsAddDialogOpen(false);
-    toast({ title: "Added", description: "Policy added successfully" });
-    // Reset form
-    setFormData({ plate: "", owner: "", company: "SORAS", startDate: "", expiryDate: "", contact: "" });
-  } catch (error: any) {
-    // Catch the "Phone number exists" error from your backend
-    const errMsg = error.response?.data?.error || "Failed to add policy";
-    toast({ title: "Error", description: errMsg, variant: "destructive" });
-  }
-};
-
-  /* ---------------- EDIT ---------------- */
   const handleEdit = async () => {
     if (!selectedPolicy) return;
     try {
@@ -233,40 +236,29 @@ const validateRWPhone = (phone: string) => {
         expiry_date: formData.expiryDate,
         contact: formData.contact,
       });
-      fetchPolicies();
+      checkAuthAndFetch();
       setIsEditDialogOpen(false);
-      toast({ title: "Updated", description: "Policy updated successfully" });
+      toast({ title: "Updated", description: "Policy saved" });
     } catch {
-      toast({ title: "Error", description: "Failed to update policy", variant: "destructive" });
+      toast({ title: "Error", description: "Update failed", variant: "destructive" });
     }
   };
 
-  /* ---------------- DELETE ---------------- */
   const handleDelete = async () => {
     if (!selectedPolicy) return;
     try {
       await axios.delete(`${API_URL}/${selectedPolicy.id}`);
-      fetchPolicies();
+      checkAuthAndFetch();
       setIsDeleteDialogOpen(false);
-      toast({ title: "Deleted", description: "Policy deleted", variant: "destructive" });
+      toast({ title: "Deleted", description: "Policy removed", variant: "destructive" });
     } catch {
-      toast({ title: "Error", description: "Failed to delete policy", variant: "destructive" });
+      toast({ title: "Error", description: "Delete failed", variant: "destructive" });
     }
   };
 
-  /* ---------------- EXPORT ---------------- */
   const exportToCSV = () => {
     const headers = ["Plate", "Owner", "Company", "Start Date", "Expiry Date", "Days Remaining", "Status", "Contact"];
-    const rows = filteredPolicies.map((p) => [
-      p.plate,
-      p.owner,
-      p.company,
-      p.start_date,
-      p.expiry_date,
-      p.days_remaining > 0 ? `${p.days_remaining} day${p.days_remaining > 1 ? "s" : ""}` : "Expired",
-      p.status,
-      p.contact,
-    ]);
+    const rows = filteredPolicies.map((p) => [p.plate, p.owner, p.company, p.start_date, p.expiry_date, p.days_remaining, p.status, p.contact]);
     const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -276,30 +268,40 @@ const validateRWPhone = (phone: string) => {
     a.click();
   };
 
-  if (loading) return <p className="text-center py-20">Loading policies...</p>;
+  if (loading) return <p className="text-center py-20 text-muted-foreground animate-pulse">Synchronizing policies...</p>;
 
-  /* ---------------- UI ---------------- */
   return (
     <div className="space-y-6">
-            {/* Header */}
-<div className="flex justify-between items-center">
+      <div className="flex justify-between items-center">
   <div>
     <h1 className="text-3xl font-bold">Insurance Policies</h1>
     <p className="text-muted-foreground">Manage all vehicle insurance policies</p>
   </div>
   <div className="flex gap-2">
-    {/* NEW MESSAGE BUTTON */}
-    <Button variant="outline" className="gap-2" onClick={() => setIsMessageDialogOpen(true)}>
-      <Search className="w-4 h-4" /> Broadcast SMS
+    {/* New Export Button */}
+    <Button 
+      variant="outline" 
+      className="gap-2" 
+      onClick={exportToCSV}
+    >
+      <Download className="w-4 h-4" /> Export CSV
     </Button>
-    <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}>
-      <Plus className="w-4 h-4" /> Add Policy
-    </Button>
+
+    {isAdmin && (
+      <Button variant="outline" className="gap-2" onClick={() => setIsMessageDialogOpen(true)}>
+        <Search className="w-4 h-4" /> Broadcast SMS
+      </Button>
+    )}
+    
+    {/* Allow Admin OR Manager to Add */}
+    {canModify && (
+      <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}>
+        <Plus className="w-4 h-4" /> Add Policy
+      </Button>
+    )}
   </div>
 </div>
 
-
-      {/* Filters & Table */}
       <Card className="p-6">
         <div className="flex gap-4 mb-6 items-center">
           <div className="flex-1 relative">
@@ -354,13 +356,11 @@ const validateRWPhone = (phone: string) => {
             <TableBody>
               {paginatedPolicies.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                    No policies found
-                  </TableCell>
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No policies found</TableCell>
                 </TableRow>
               ) : paginatedPolicies.map((policy) => (
                 <TableRow key={policy.id}>
-                  <TableCell>{policy.plate}</TableCell>
+                  <TableCell className="font-medium">{policy.plate}</TableCell>
                   <TableCell>{policy.owner}</TableCell>
                   <TableCell>{policy.company}</TableCell>
                   <TableCell>{policy.start_date}</TableCell>
@@ -373,95 +373,91 @@ const validateRWPhone = (phone: string) => {
                     <Button variant="ghost" size="icon" onClick={() => { setSelectedPolicy(policy); setIsViewDialogOpen(true); }}>
                       <Eye className="w-4 h-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => {
-                      setSelectedPolicy(policy);
-                      setFormData({
-                        plate: policy.plate,
-                        owner: policy.owner,
-                        company: policy.company,
-                        startDate: policy.start_date,
-                        expiryDate: policy.expiry_date,
-                        contact: policy.contact,
-                      });
-                      setIsEditDialogOpen(true);
-                    }}>
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { setSelectedPolicy(policy); setIsDeleteDialogOpen(true); }}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    
+                    {/* Allow Admin OR Manager to Edit */}
+                    {canModify && (
+                      <Button variant="ghost" size="icon" onClick={() => {
+                        setSelectedPolicy(policy);
+                        setFormData({
+                          plate: policy.plate,
+                          owner: policy.owner,
+                          company: policy.company,
+                          startDate: policy.start_date,
+                          expiryDate: policy.expiry_date,
+                          contact: policy.contact,
+                        });
+                        setIsEditDialogOpen(true);
+                      }}>
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                    )}
+
+                    {/* ONLY Admin can Delete */}
+                    {isAdmin && (
+                      <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { setSelectedPolicy(policy); setIsDeleteDialogOpen(true); }}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
-
-        {/* Pagination */}
-        <div className="flex justify-between items-center mt-4">
-          <p className="text-sm text-muted-foreground">
-            Showing {Math.min((currentPage - 1) * itemsPerPage + 1, filteredPolicies.length)} - {Math.min(currentPage * itemsPerPage, filteredPolicies.length)} of {filteredPolicies.length}
-          </p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(currentPage - 1)}>Previous</Button>
-            <Button variant="outline" size="sm" disabled={currentPage === totalPages || totalPages === 0} onClick={() => setCurrentPage(currentPage + 1)}>Next</Button>
-          </div>
-        </div>
       </Card>
 
-      {/* ===== VIEW DIALOG WITH STATUS ===== */}
+      {/* ===== VIEW DIALOG ===== */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Policy Details</DialogTitle>
-            <DialogDescription>View details for the selected policy.</DialogDescription>
+            <DialogDescription>Full technical details for this policy.</DialogDescription>
           </DialogHeader>
           {selectedPolicy && (
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-muted-foreground">Plate Number</Label>
-                  <p className="font-medium">{selectedPolicy.plate}</p>
+                  <Label className="text-muted-foreground text-xs uppercase">Plate Number</Label>
+                  <p className="font-bold text-lg">{selectedPolicy.plate}</p>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground">Owner</Label>
+                  <Label className="text-muted-foreground text-xs uppercase">Owner</Label>
                   <p className="font-medium">{selectedPolicy.owner}</p>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground">Company</Label>
+                  <Label className="text-muted-foreground text-xs uppercase">Company</Label>
                   <p className="font-medium">{selectedPolicy.company}</p>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground">Contact</Label>
+                  <Label className="text-muted-foreground text-xs uppercase">Contact</Label>
                   <p className="font-medium">{selectedPolicy.contact}</p>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground">Start Date</Label>
+                  <Label className="text-muted-foreground text-xs uppercase">Start Date</Label>
                   <p className="font-medium">{selectedPolicy.start_date}</p>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground">Expiry Date</Label>
+                  <Label className="text-muted-foreground text-xs uppercase">Expiry Date</Label>
                   <p className="font-medium">{selectedPolicy.expiry_date}</p>
                 </div>
-                <div>
-                  <Label className="text-muted-foreground">Status</Label>
-                  <Badge className={getStatusBadge(selectedPolicy.status)}>{selectedPolicy.status}</Badge>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Days Remaining</Label>
-                  <p className="font-medium">
-                    {selectedPolicy.days_remaining > 0 ? `${selectedPolicy.days_remaining} day${selectedPolicy.days_remaining > 1 ? "s" : ""}` : "Expired"}
-                  </p>
+                <div className="col-span-2 pt-2 border-t">
+                  <Label className="text-muted-foreground text-xs uppercase">Status Overview</Label>
+                  <div className="flex items-center gap-3 mt-1">
+                    <Badge className={getStatusBadge(selectedPolicy.status)}>{selectedPolicy.status}</Badge>
+                    <span className="text-sm font-semibold">
+                       {selectedPolicy.days_remaining > 0 ? `${selectedPolicy.days_remaining} days until expiration` : "Policy Expired"}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
           )}
           <DialogFooter>
-            <Button onClick={() => setIsViewDialogOpen(false)}>Close</Button>
+            <Button onClick={() => setIsViewDialogOpen(false)}>Close Window</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-{/* Dialogs: Add / Edit / View / Delete */}
+
       {/* ===== ADD DIALOG ===== */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent>
@@ -472,11 +468,11 @@ const validateRWPhone = (phone: string) => {
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="plate">Plate Number</Label>
-              <Input id="plate" value={formData.plate} onChange={(e) => setFormData({ ...formData, plate: e.target.value })} />
+              <Input id="plate" placeholder="e.g. RAE 123A" value={formData.plate} onChange={(e) => setFormData({ ...formData, plate: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="owner">Owner Name</Label>
-              <Input id="owner" value={formData.owner} onChange={(e) => setFormData({ ...formData, owner: e.target.value })} />
+              <Input id="owner" placeholder="Full Name" value={formData.owner} onChange={(e) => setFormData({ ...formData, owner: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="company">Insurance Company</Label>
@@ -490,32 +486,34 @@ const validateRWPhone = (phone: string) => {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="startDate">Start Date</Label>
-              <Input id="startDate" type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="expiryDate">Expiry Date</Label>
-              <Input id="expiryDate" type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="startDate">Start Date</Label>
+                <Input id="startDate" type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="expiryDate">Expiry Date</Label>
+                <Input id="expiryDate" type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} />
+              </div>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="contact">Contact Number</Label>
-              <Input id="contact" value={formData.contact} onChange={(e) => setFormData({ ...formData, contact: e.target.value })} />
+              <Input id="contact" placeholder="078..." value={formData.contact} onChange={(e) => setFormData({ ...formData, contact: e.target.value })} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Add Policy</Button>
+            <Button onClick={handleAdd}>Save Policy</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ===== EDIT DIALOG (original layout) ===== */}
+      {/* ===== EDIT DIALOG ===== */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Policy</DialogTitle>
-            <DialogDescription>Update the policy details.</DialogDescription>
+            <DialogDescription>Update the existing policy details.</DialogDescription>
           </DialogHeader>
           {selectedPolicy && (
             <div className="grid gap-4 py-4">
@@ -539,16 +537,15 @@ const validateRWPhone = (phone: string) => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-startDate">Start Date</Label>
-                <Input id="edit-startDate" type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-expiryDate">Expiry Date</Label>
-                <Input id="edit-expiryDate" type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} />
-                <p className="text-sm text-muted-foreground">
-                  Days Remaining: {selectedPolicy.days_remaining > 0 ? `${selectedPolicy.days_remaining} day${selectedPolicy.days_remaining > 1 ? "s" : ""}` : "Expired"}
-                </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-startDate">Start Date</Label>
+                  <Input id="edit-startDate" type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-expiryDate">Expiry Date</Label>
+                  <Input id="edit-expiryDate" type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} />
+                </div>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-contact">Contact Number</Label>
@@ -558,79 +555,16 @@ const validateRWPhone = (phone: string) => {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleEdit}>Save Changes</Button>
+            <Button onClick={handleEdit}>Update Policy</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ===== VIEW DIALOG (original layout) ===== */}
-      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Policy Details</DialogTitle>
-            <DialogDescription>View details for the selected policy.</DialogDescription>
-          </DialogHeader>
-          {selectedPolicy && (
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-muted-foreground">Plate Number</Label>
-                  <p className="font-medium">{selectedPolicy.plate}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Owner</Label>
-                  <p className="font-medium">{selectedPolicy.owner}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Company</Label>
-                  <p className="font-medium">{selectedPolicy.company}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Contact</Label>
-                  <p className="font-medium">{selectedPolicy.contact}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Start Date</Label>
-                  <p className="font-medium">{selectedPolicy.start_date}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Expiry Date</Label>
-                  <p className="font-medium">{selectedPolicy.expiry_date}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Since Start</Label>
-                  <p className="font-medium">
-                    {selectedPolicy.timeToStart
-                      ? selectedPolicy.timeToStart.totalSeconds > 0
-                        ? `Starts in ${formatSpan(selectedPolicy.timeToStart)}`
-                        : `Started ${Math.abs(Math.ceil((selectedPolicy.timeToStart.totalSeconds) / 86400))} day(s) ago`
-                      : "—"}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Time Until Expiry</Label>
-                  <p className={`font-medium ${selectedPolicy.timeToEnd && selectedPolicy.timeToEnd.totalSeconds <= 0 ? "text-destructive" : ""}`}>
-                    {selectedPolicy.timeToEnd ? (selectedPolicy.timeToEnd.totalSeconds > 0 ? formatSpan(selectedPolicy.timeToEnd) : `${Math.abs(Math.ceil(selectedPolicy.timeToEnd.totalSeconds / 86400))} day(s) ago`) : "—"}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Status</Label>
-                  <Badge className={getStatusBadge(selectedPolicy.status)} variant="outline">{selectedPolicy.status}</Badge>
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button onClick={() => setIsViewDialogOpen(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ===== DELETE DIALOG (original layout) ===== */}
+      {/* ===== DELETE DIALOG ===== */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete the policy for <strong>{selectedPolicy?.plate}</strong>. This action cannot be undone.
             </AlertDialogDescription>
@@ -638,84 +572,64 @@ const validateRWPhone = (phone: string) => {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete
+              Delete Forever
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-  {/* ===== PROFESSIONAL BULK MESSAGE DIALOG ===== */}
-<Dialog open={isMessageDialogOpen} onOpenChange={setIsMessageDialogOpen}>
-  <DialogContent className="sm:max-w-[500px]">
-    <DialogHeader>
-      <div className="flex items-center gap-2">
-        <div className="p-2 bg-primary/10 rounded-full">
-          <Search className="w-5 h-5 text-primary" />
-        </div>
-        <DialogTitle className="text-xl">Broadcast SMS</DialogTitle>
-      </div>
-      <DialogDescription className="pt-2">
-        You are sending a message to <span className="font-bold text-foreground">{filteredPolicies.length} recipients</span>. 
-        Filters currently applied: <Badge variant="secondary" className="ml-1 uppercase text-[10px]">{statusFilter}</Badge>
-      </DialogDescription>
-    </DialogHeader>
 
-    <div className="space-y-4 py-4">
-      {/* Quick Tags Info */}
-      <div className="bg-muted/50 p-3 rounded-lg border border-border">
-        <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Available Personalization Tags</Label>
-        <div className="flex gap-2 mt-2">
-          {['{owner}', '{plate}', '{days}'].map(tag => (
-            <code key={tag} className="px-1.5 py-0.5 rounded bg-background border text-xs font-mono text-primary">
-              {tag}
-            </code>
-          ))}
-        </div>
-      </div>
+      {/* ===== BROADCAST DIALOG ===== */}
+      <Dialog open={isMessageDialogOpen} onOpenChange={setIsMessageDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-primary/10 rounded-full">
+                <Search className="w-5 h-5 text-primary" />
+              </div>
+              <DialogTitle className="text-xl">Broadcast SMS</DialogTitle>
+            </div>
+            <DialogDescription className="pt-2">
+              Sending to <span className="font-bold text-foreground">{filteredPolicies.length} recipients</span>.
+            </DialogDescription>
+          </DialogHeader>
 
-      <div className="grid gap-2">
-        <div className="flex justify-between items-center">
-          <Label htmlFor="message">Message Content</Label>
-          <span className={`text-[10px] font-medium ${bulkMessage.length > 160 ? 'text-warning' : 'text-muted-foreground'}`}>
-            {bulkMessage.length} / 160 characters (1 SMS)
-          </span>
-        </div>
-        <textarea
-          id="message"
-          className="flex min-h-[150px] w-full rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed transition-all resize-none"
-          placeholder="e.g. Dear {owner}, your insurance for {plate} expires in {days} days. Please renew with SORAS."
-          value={bulkMessage}
-          onChange={(e) => setBulkMessage(e.target.value)}
-        />
-      </div>
+          <div className="space-y-4 py-4">
+            <div className="bg-muted/50 p-3 rounded-lg border border-border">
+              <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Personalization Tags</Label>
+              <div className="flex gap-2 mt-2">
+                {['{owner}', '{plate}', '{days}'].map(tag => (
+                  <code key={tag} className="px-1.5 py-0.5 rounded bg-background border text-xs font-mono text-primary">
+                    {tag}
+                  </code>
+                ))}
+              </div>
+            </div>
 
-      <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-100 dark:bg-blue-950/30 dark:border-blue-900">
-        <div className="mt-0.5 text-blue-600 italic text-xs">
-          💡 Pro-tip: Keep messages under 160 characters to avoid double billing from Africa's Talking.
-        </div>
-      </div>
-    </div>
+            <div className="grid gap-2">
+              <div className="flex justify-between items-center">
+                <Label htmlFor="message">Message Content</Label>
+                <span className={`text-[10px] font-medium ${bulkMessage.length > 160 ? 'text-warning' : 'text-muted-foreground'}`}>
+                  {bulkMessage.length} / 160 chars
+                </span>
+              </div>
+              <textarea
+                id="message"
+                className="flex min-h-[150px] w-full rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all resize-none"
+                placeholder="e.g. Dear {owner}, your insurance for {plate} expires in {days} days."
+                value={bulkMessage}
+                onChange={(e) => setBulkMessage(e.target.value)}
+              />
+            </div>
+          </div>
 
-    <DialogFooter className="gap-2 sm:gap-0">
-      <Button variant="ghost" onClick={() => setIsMessageDialogOpen(false)}>
-        Cancel
-      </Button>
-      <Button 
-        onClick={handleSendMessage} 
-        disabled={isSending || !bulkMessage.trim()}
-        className="px-8 shadow-lg shadow-primary/20"
-      >
-        {isSending ? (
-          <span className="flex items-center gap-2">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            Sending...
-          </span>
-        ) : (
-          "Send Broadcast"
-        )}
-      </Button>
-    </DialogFooter>
-  </DialogContent>
-</Dialog>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsMessageDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSendMessage} disabled={isSending || !bulkMessage.trim()}>
+              {isSending ? "Sending..." : "Send Broadcast"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

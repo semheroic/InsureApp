@@ -14,7 +14,6 @@ const cron = require("node-cron");
 const multer = require("multer");
 const path = require("path");
 const app = express();
-
 // ---------------- Multer setup for profile pictures ----------------
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, "public/uploads/"),
@@ -87,7 +86,7 @@ const formatRwandaNumber = number => {
 
 const logSMS = async (to, message, cost = 0, status = "pending", messageId = "N/A") => {
   try {
-    // If API returns 0.00, we can use a standard local rate (e.g., 15 RWF) for reporting
+    // If API returns 0.00, we use a standard local rate (e.g., 15 RWF)
     const finalCost = (parseFloat(cost) === 0) ? 15.00 : parseFloat(cost);
 
     await query(
@@ -101,22 +100,42 @@ const logSMS = async (to, message, cost = 0, status = "pending", messageId = "N/
 
 const sendSMS = async (to, message) => {
   const formatted = formatRwandaNumber(to);
+  
+  // Africa's Talking configuration options
+  const options = {
+    to: [formatted],
+    message: message,
+    from: "Bright-Insurance" // Your approved Sender ID
+  };
+
   try {
-    const result = await sms.send({ to: [formatted], message });
+    const result = await sms.send(options);
+    
+    // AT returns an array of recipients
     if (result?.SMSMessageData?.Recipients?.length) {
       const r = result.SMSMessageData.Recipients[0];
-      await logSMS(formatted, message, parseFloat(r.cost) || 0, r.status || "Success", r.messageId || "N/A");
-      return { success: true, result: r };
+      
+      // Clean the cost string (e.g., "RWF 15.00" -> 15.00)
+      const numericCost = r.cost ? parseFloat(r.cost.replace(/[^0-9.]/g, '')) : 0;
+
+      await logSMS(
+        formatted, 
+        message, 
+        numericCost, 
+        r.status, 
+        r.messageId
+      );
+      
+      return { success: r.status === "Success", result: r };
     }
-    await logSMS(formatted, message, 0, "unknown", "N/A");
-    return { success: false };
+    
+    return { success: false, error: "No recipient data returned" };
   } catch (err) {
     console.error("SMS send error:", err);
     await logSMS(formatted, message, 0, "failed", "N/A");
     throw err;
   }
 };
-
 const calculatePolicyStatus = (expiry_date, updated = false) => {
   if (updated) return "Renewed";
   const today = new Date();
@@ -203,7 +222,20 @@ ensureTables().catch(err => { console.error(err); process.exit(1); });
 
 // ======================== AUTH MIDDLEWARE ========================
 const isAuthenticated = (req,res,next) => { if(req.session?.userId) return next(); return res.status(401).json({ error:"Unauthorized" }); };
+const isAdmin = (req, res, next) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: "Unauthorized. Please login." });
+  }
 
+  // Convert to lowercase before comparing
+  const role = req.session.userRole ? req.session.userRole.toLowerCase() : "";
+  
+  if (role !== 'admin') {
+    return res.status(403).json({ error: "Access denied. Admins only." });
+  }
+
+  next();
+};
 // ======================== AUTH ROUTES ========================
 // Login / Logout / Me
 app.post("/auth/login", async (req,res)=>{ try{
@@ -279,7 +311,7 @@ app.get("/users/:id", async (req, res) => {
 });
 
 // ---------------- CREATE USER ----------------
-app.post("/users", upload.single("profile_picture"), async (req, res) => {
+app.post("/users", isAdmin, upload.single("profile_picture"), async (req, res) => {
   try {
     const { name, email, phone, password, role } = req.body;
 
@@ -383,7 +415,7 @@ app.put("/users/:id", upload.single("profile_picture"), async (req, res) => {
   }
 });
 // ---------------- DEACTIVATE USER ----------------
-app.delete("/users/:id", async (req, res) => {
+app.delete("/users/:id",isAdmin, async (req, res) => {
   try {
     const userResult = await query("SELECT email, name FROM users WHERE id=?", [req.params.id]);
     const user = userResult[0];
@@ -456,7 +488,7 @@ app.get("/policies/:id", async (req, res) => {
 });
 
 // POST: Create a new policy
-app.post("/policies", async (req, res) => {
+app.post("/policies",async (req, res) => {
   try {
     const { plate, owner, company, start_date, expiry_date, contact } = req.body;
 
@@ -486,7 +518,7 @@ app.post("/policies", async (req, res) => {
 });
 
 // PUT: Renew policy and log history
-app.put("/policies/:id", async (req, res) => {
+app.put("/policies/:id", isAdmin,async (req, res) => {
   try {
     const { plate, owner, company, start_date, expiry_date, contact } = req.body;
     const policyId = req.params.id;
@@ -534,11 +566,25 @@ app.put("/policies/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-app.delete("/policies/:id", async (req,res)=>{ await query("DELETE FROM policies WHERE id=?",[req.params.id]); res.json({ message:"Policy deleted" }); });
+app.delete("/policies/:id", isAdmin,async (req,res)=>{ await query("DELETE FROM policies WHERE id=?",[req.params.id]); res.json({ message:"Policy deleted" }); });
 
 // ======================== DASHBOARD / STATS ========================
 app.get("/api/summary", async (req,res)=>{ const stats = await query("SELECT COUNT(*) AS created,SUM(CASE WHEN DATEDIFF(expiry_date,NOW())>3 THEN 1 ELSE 0 END) AS active,SUM(CASE WHEN DATEDIFF(expiry_date,NOW())<=3 AND DATEDIFF(expiry_date,NOW())>=0 THEN 1 ELSE 0 END) AS expiring,SUM(CASE WHEN DATEDIFF(expiry_date,NOW())<0 THEN 1 ELSE 0 END) AS expired FROM policies"); res.json(stats[0]); });
-app.get("/api/trends", async (req,res)=>{ const results = await query("SELECT DATE_FORMAT(expiry_date,'%Y-%m') AS month, COUNT(*) AS count FROM policies GROUP BY month ORDER BY month DESC LIMIT 12"); res.json({ trends: results }); });
+app.get("/api/trends", async (req, res) => {
+  const results = await query(`
+    SELECT 
+      DATE_FORMAT(expiry_date, '%b %Y') AS month,
+      SUM(CASE WHEN DATEDIFF(expiry_date, NOW()) > 0 THEN 1 ELSE 0 END) AS active,
+      SUM(CASE WHEN DATEDIFF(expiry_date, NOW()) <= 0 THEN 1 ELSE 0 END) AS expired,
+      -- If you don't have a 'renewed' column, we can use 0 or a placeholder
+      COUNT(*) AS total 
+    FROM policies 
+    GROUP BY month 
+    ORDER BY MIN(expiry_date) DESC 
+    LIMIT 12
+  `);
+  res.json({ trends: results });
+});
 app.get("/api/company-distribution", async (req,res)=>{ const results = await query("SELECT company AS name, COUNT(*) AS value FROM policies GROUP BY company"); const colors = ["hsl(var(--primary))","hsl(var(--success))","hsl(var(--warning))","hsl(var(--destructive))"]; const data = results.map((r,i)=>({...r,color:colors[i%colors.length]})); res.json(data); });
 app.get("/api/sidebar-counts", async (req,res)=>{ const results = await query("SELECT (SELECT COUNT(*) FROM policies) AS policies,(SELECT COUNT(*) FROM users) AS users"); res.json(results[0]||{ policies:0, users:0 }); });
 
@@ -868,4 +914,4 @@ app.post("/api/policies/broadcast", async (req, res) => {
 });
 //===================== START SERVER ========================
 const PORT = process.env.PORT || 5000;
-app.listen(PORT,()=>console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT,()=> console.log(`🚀 Server running on port ${PORT} `));

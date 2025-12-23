@@ -17,6 +17,7 @@ import VerifyOtp from "./pages/VerifyOtp";
 import FollowUp from "./pages/Followup";
 import { EditProfile } from "./components/Layout/EditProfile";
 import PolicyHistoryTracker from "./pages/PolicyHistory";
+
 const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -25,6 +26,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
+          
           <Route path="/dashboard" element={<MainLayout><Dashboard /></MainLayout>} />
           <Route path="/" element={<Login/>} />
           <Route path="/signup" element={<AddUser/>} />
@@ -44,5 +46,4 @@ const App = () => (
     </TooltipProvider>
   </QueryClientProvider>
 );
-
 export default App;

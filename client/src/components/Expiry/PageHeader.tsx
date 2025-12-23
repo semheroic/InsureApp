@@ -65,13 +65,7 @@ export const PageHeader = ({ companyFilter, onFilterChange, onExport }: PageHead
 
         <div className="w-[1px] h-6 bg-slate-200 mx-1 hidden sm:block" />
 
-        <Button 
-          onClick={handleExportClick} 
-          className="gap-2 bg-slate-900 hover:bg-blue-600 text-white transition-all duration-300 shadow-md h-9 px-4 rounded-lg text-xs font-bold"
-        >
-          <Download className="w-3.5 h-3.5" />
-          Export CSV
-        </Button>
+        
       </div>
     </div>
   );

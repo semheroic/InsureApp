@@ -21,9 +21,15 @@ const Login = () => {
 
   const API_BASE = "http://localhost:5000";
 
+  // Check if user is already logged in on mount
   useEffect(() => {
     fetch(`${API_BASE}/auth/me`, { credentials: "include" })
-      .then((res) => res.ok && navigate("/dashboard"))
+      .then(async (res) => {
+        if (res.ok) {
+          // If the server says we are logged in, go to dashboard
+          navigate("/dashboard");
+        }
+      })
       .catch(() => {});
   }, [navigate]);
 
@@ -55,7 +61,15 @@ const Login = () => {
         });
       }
 
-      toast({ title: "Welcome back!", description: "Access granted." });
+      // SUCCESS: The session cookie is now set in the browser automatically.
+      // We don't need to store the role in localStorage because our 
+      // Dashboard will fetch the role from /auth/me when it loads.
+      
+      toast({ 
+        title: "Welcome back!", 
+        description: `Access granted as ${data.role}.` 
+      });
+      
       navigate("/dashboard");
     } catch {
       toast({

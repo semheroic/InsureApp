@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { 
   CheckCircle2, XCircle, Search, User, Hash, ArrowRight, History as HistoryIcon, 
   RefreshCcw, MessageSquare, DollarSign, Send, ShieldCheck, 
-  Phone, Building2, Filter, TrendingUp, Clock, Zap, Sparkles, CalendarDays
+  Phone, Building2, Filter, TrendingUp, Clock, Zap, Sparkles, CalendarDays, AlertCircle, Download
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -24,7 +24,6 @@ const itemVariants = {
   visible: { x: 0, opacity: 1, transition: { type: "spring", stiffness: 100 } }
 };
 
-// --- Types ---
 interface PolicyHistoryData {
   id: number;
   policy_id: number;
@@ -91,7 +90,6 @@ const PolicyHistory = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // --- CALCULATE COSTS (Today, Week, Month) ---
   const stats = useMemo(() => {
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -103,16 +101,12 @@ const PolicyHistory = () => {
       return isNaN(val) ? 0 : val;
     };
 
-    const totalSpent = smsLogs.reduce((acc, log) => acc + getCost(log), 0);
-    
     const todaySpent = smsLogs
       .filter(log => new Date(log.created_at).getTime() >= startOfDay)
       .reduce((acc, log) => acc + getCost(log), 0);
-
     const weekSpent = smsLogs
       .filter(log => new Date(log.created_at).getTime() >= startOfWeek)
       .reduce((acc, log) => acc + getCost(log), 0);
-
     const monthSpent = smsLogs
       .filter(log => new Date(log.created_at).getTime() >= startOfMonth)
       .reduce((acc, log) => acc + getCost(log), 0);
@@ -122,32 +116,68 @@ const PolicyHistory = () => {
       : 0;
     
     const renewalCount = history.filter(h => !!h.renewed_date).length;
+    const expiredCount = history.filter(h => !h.renewed_date).length;
 
-    return { totalSpent, todaySpent, weekSpent, monthSpent, successRate, renewalCount };
+    return { todaySpent, weekSpent, monthSpent, successRate, renewalCount, expiredCount };
   }, [smsLogs, history]);
 
-  // --- FILTERING LOGIC ---
   const filteredData = useMemo(() => {
     const s = search.toLowerCase();
     if (activeTab === "policies") {
       return history.filter(h => {
         const matchesSearch = h.plate?.toLowerCase().includes(s) || h.owner?.toLowerCase().includes(s);
-        const isRenewed = !!h.renewed_date;
         const matchesStatus = statusFilter === "all" || 
-                             (statusFilter === "expired" && !isRenewed) || 
-                             (statusFilter === "renewed" && isRenewed);
+                              (statusFilter === "expired" && !h.renewed_date) || 
+                              (statusFilter === "renewed" && !!h.renewed_date);
         const matchesCompany = companyFilter === "all" || h.company === companyFilter;
         return matchesSearch && matchesStatus && matchesCompany;
       });
     }
-    // SMS Search: Check both phone number and message content
     return smsLogs.filter(l => l.phone_number.includes(search) || l.message.toLowerCase().includes(s));
   }, [history, smsLogs, search, activeTab, statusFilter, companyFilter]);
+
+  const exportToCSV = () => {
+    if (filteredData.length === 0) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    let headers: string[] = [];
+    let rows: any[] = [];
+
+    if (activeTab === "policies") {
+      headers = ["Plate", "Owner", "Company", "Expiry Date", "Renewal Date"];
+      rows = (filteredData as PolicyHistoryData[]).map(h => [
+        h.plate, h.owner, h.company, h.expiry_date, h.renewed_date || "N/A"
+      ]);
+    } else {
+      headers = ["Phone Number", "Message", "Cost (RWF)", "Status", "Date"];
+      rows = (filteredData as SMSLog[]).map(l => [
+        l.phone_number, `"${l.message.replace(/"/g, '""')}"`, l.cost, l.delivery_status, l.created_at
+      ]);
+    }
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${activeTab}_history_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({ title: "Export Complete", description: "CSV file has been downloaded." });
+  };
 
   return (
     <motion.div initial="hidden" animate="visible" variants={containerVariants} className="max-w-6xl mx-auto p-6 space-y-8">
       
-      {/* HEADER SECTION */}
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
           <div className="flex items-center gap-2 text-primary mb-1">
@@ -156,64 +186,74 @@ const PolicyHistory = () => {
           </div>
           <h1 className="text-4xl font-black tracking-tighter text-foreground italic">Registry History</h1>
         </div>
-        <Button onClick={fetchData} disabled={loading} className="rounded-xl shadow-lg shadow-primary/20">
-          <RefreshCcw size={16} className={cn("mr-2", loading && "animate-spin")} /> Force Sync
-        </Button>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={exportToCSV} className="rounded-xl border-muted-foreground/20 font-bold uppercase text-[10px] tracking-widest shadow-sm">
+            <Download size={16} className="mr-2" /> Export CSV
+          </Button>
+          <Button onClick={fetchData} disabled={loading} className="rounded-xl shadow-lg shadow-primary/20">
+            <RefreshCcw size={16} className={cn("mr-2", loading && "animate-spin")} /> Force Sync
+          </Button>
+        </div>
       </div>
 
       {/* ANALYTICS CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="p-6 bg-primary/5 border-primary/20 border-l-4 border-l-primary flex flex-col justify-between">
-          <p className="text-[10px] font-black uppercase text-primary/60 tracking-widest">Successful Renewals</p>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card className="p-5 bg-emerald-500/5 border-emerald-500/20 border-l-4 border-l-emerald-500">
+          <p className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Total Renewed</p>
           <div className="flex items-center justify-between mt-2">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="text-primary" size={24}/>
-              <p className="text-3xl font-black">{stats.renewalCount}</p>
+              <CheckCircle2 className="text-emerald-500" size={20}/>
+              <p className="text-2xl font-black">{stats.renewalCount}</p>
             </div>
-            <HistoryIcon className="text-primary/20" size={32}/>
+            <TrendingUp className="text-emerald-500/20" size={28}/>
           </div>
         </Card>
 
-        <Card className="p-6 bg-emerald-500/5 border-emerald-500/20 border-l-4 border-l-emerald-500">
-          <p className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Delivery Performance</p>
+        <Card className="p-5 bg-rose-500/5 border-rose-500/20 border-l-4 border-l-rose-500">
+          <p className="text-[10px] font-black uppercase text-rose-600 tracking-widest">Expired Registry</p>
           <div className="flex items-center justify-between mt-2">
             <div className="flex items-center gap-2">
-              <TrendingUp className="text-emerald-500" size={24}/>
-              <p className="text-3xl font-black">{stats.successRate}%</p>
+              <AlertCircle className="text-rose-500" size={20}/>
+              <p className="text-2xl font-black">{stats.expiredCount}</p>
             </div>
-            <MessageSquare className="text-emerald-500/20" size={32}/>
+            <XCircle className="text-rose-500/20" size={28}/>
           </div>
         </Card>
 
-        <Card className="p-6 bg-amber-500/5 border-amber-500/20 border-l-4 border-l-amber-600">
-          <div className="flex justify-between items-start">
-            <p className="text-[10px] font-black uppercase text-amber-600 tracking-widest">Spending (RWF)</p>
-            <CalendarDays size={16} className="text-amber-400" />
+        <Card className="p-5 bg-primary/5 border-primary/20 border-l-4 border-l-primary">
+          <p className="text-[10px] font-black uppercase text-primary/60 tracking-widest">SMS Delivery</p>
+          <div className="flex items-center gap-2 mt-2">
+            <MessageSquare className="text-primary" size={20}/>
+            <p className="text-2xl font-black">{stats.successRate}%</p>
           </div>
-          <div className="grid grid-cols-3 gap-2 mt-4">
-            <div className="text-center border-r border-amber-200/50">
-               <p className="text-[9px] font-black text-amber-700/50">TODAY</p>
-               <p className="text-sm font-black">{stats.todaySpent.toFixed(0)}</p>
+        </Card>
+
+        <Card className="p-5 bg-amber-500/5 border-amber-500/20 border-l-4 border-l-amber-600">
+          <p className="text-[10px] font-black uppercase text-amber-600 tracking-widest text-center mb-2">Cost (RWF)</p>
+          <div className="flex justify-between text-center gap-1">
+            <div>
+               <p className="text-[8px] font-bold text-amber-700/50">DAY</p>
+               <p className="text-xs font-black">{stats.todaySpent.toFixed(0)}</p>
             </div>
-            <div className="text-center border-r border-amber-200/50">
-               <p className="text-[9px] font-black text-amber-700/50">WEEK</p>
-               <p className="text-sm font-black">{stats.weekSpent.toFixed(0)}</p>
+            <div className="border-x border-amber-200/50 px-2">
+               <p className="text-[8px] font-bold text-amber-700/50">WEEK</p>
+               <p className="text-xs font-black">{stats.weekSpent.toFixed(0)}</p>
             </div>
-            <div className="text-center">
-               <p className="text-[9px] font-black text-amber-700/50">MONTH</p>
-               <p className="text-sm font-black">{stats.monthSpent.toFixed(0)}</p>
+            <div>
+               <p className="text-[8px] font-bold text-amber-700/50">MONTH</p>
+               <p className="text-xs font-black">{stats.monthSpent.toFixed(0)}</p>
             </div>
           </div>
         </Card>
       </div>
 
-      {/* CONTROL CENTER */}
+      {/* SEARCH AND FILTERS */}
       <Card className="p-2 border-muted bg-muted/30 backdrop-blur-xl sticky top-20 z-40">
         <div className="flex flex-col lg:flex-row items-center gap-2">
           <div className="relative w-full lg:flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
             <Input
-              placeholder={activeTab === 'policies' ? "Search Plate or Owner..." : "Search Phone Number or SMS..."}
+              placeholder={activeTab === 'policies' ? "Search Plate or Owner..." : "Search Phone Number..."}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-12 h-12 border-none bg-transparent focus-visible:ring-0 text-base"
@@ -248,18 +288,6 @@ const PolicyHistory = () => {
                   <SelectItem value="renewed">Renewed</SelectItem>
                 </SelectContent>
               </Select>
-
-              <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                <SelectTrigger className="w-full lg:w-[130px] h-12 bg-background border-none text-[10px] font-bold uppercase">
-                  <Building2 size={14} className="mr-2"/> Provider
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Companies</SelectItem>
-                  <SelectItem value="SORAS">SORAS</SelectItem>
-                  <SelectItem value="RADIANT">RADIANT</SelectItem>
-                  <SelectItem value="SANLAM">SANLAM</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           )}
         </div>
@@ -268,7 +296,6 @@ const PolicyHistory = () => {
       {/* TIMELINE VIEW */}
       <div className="relative min-h-[400px]">
         <div className="absolute left-[15px] top-6 bottom-6 w-1 bg-gradient-to-b from-primary via-muted to-transparent rounded-full opacity-50" />
-        
         <AnimatePresence mode="popLayout">
           {filteredData.map((item: any) => (
             <motion.div key={`${activeTab}-${item.id}`} variants={itemVariants} className="relative ml-10 mb-6 last:mb-0">

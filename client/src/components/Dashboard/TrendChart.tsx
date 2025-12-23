@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Loader2, TrendingUp } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -22,35 +23,56 @@ import {
 
 export const TrendChart = () => {
   const [trendData, setTrendData] = useState<any[]>([]);
-  const [period, setPeriod] = useState<"week" | "month" | "year">("month");
+  const [period, setPeriod] = useState<string>("month");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    axios
-      .get(`http://localhost:5000/api/trends?period=${period}`, { withCredentials: true })
-      .then((res) => {
-        const payload = res.data.trends || res.data || [];
+    const fetchTrends = async () => {
+      try {
+        setLoading(true);
+        // Matching your backend route: app.get("/api/trends", ...)
+        // We pass the period as a query param
+        const res = await axios.get(`http://localhost:5000/api/trends?period=${period}`, { 
+          withCredentials: true 
+        });
+
+        const payload = res.data.trends || [];
+        
+        // Normalizing data: Backend returns { month, active, expired, renewed }
+        // We map 'month' (e.g., "Jan 2024") to 'label' for the XAxis
         const normalized = payload.map((d: any) => ({
-          label: d.label || d.month || d.date || d.day || "N/A",
-          created: Number(d.created || d.count || 0),
+          label: d.month || "N/A",
+          active: Number(d.active || 0),
+          expired: Number(d.expired || 0),
           renewed: Number(d.renewed || 0),
-        }));
+        })).reverse(); // Reverse to show chronological order (Past -> Present)
+
         setTrendData(normalized);
-      })
-      .finally(() => setLoading(false));
+      } catch (err) {
+        console.error("Trend fetch error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTrends();
   }, [period]);
 
   return (
-    <Card className="p-6 border-none shadow-none bg-transparent">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h3 className="text-xl font-bold tracking-tight">Performance Trends</h3>
-          <p className="text-xs text-muted-foreground">Detailed axis view of policy metrics</p>
+    <Card className="shadow-sm border-slate-200 bg-card">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-7">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-primary" />
+            <CardTitle className="text-lg font-bold">Performance Velocity</CardTitle>
+          </div>
+          <CardDescription className="text-xs">
+            Tracking policy lifecycle status over time
+          </CardDescription>
         </div>
         
-        <Select value={period} onValueChange={(v: any) => setPeriod(v)}>
-          <SelectTrigger className="w-32 rounded-xl">
+        <Select value={period} onValueChange={setPeriod}>
+          <SelectTrigger className="w-32 h-9 rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm">
             <SelectValue placeholder="Period" />
           </SelectTrigger>
           <SelectContent className="rounded-xl">
@@ -59,71 +81,92 @@ export const TrendChart = () => {
             <SelectItem value="year">Yearly</SelectItem>
           </SelectContent>
         </Select>
-      </div>
+      </CardHeader>
 
-      <div className="h-[350px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart 
-            data={trendData} 
-            margin={{ top: 10, right: 10, left: 0, bottom: 20 }} // Bottom margin for X-axis labels
-            barGap={8}
-          >
-            {/* GRID: Only horizontal lines for better readability */}
-            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--muted-foreground)/0.2)" />
+      <CardContent>
+        <div className="h-[350px] w-full relative">
+          {loading ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/50 z-10 gap-2">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <p className="text-[10px] font-bold text-muted-foreground uppercase">Syncing Trends...</p>
+            </div>
+          ) : trendData.length === 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-xs italic">
+              No trend data available for this period.
+            </div>
+          ) : null}
 
-            {/* X-AXIS: Positioned clearly at the bottom */}
-            <XAxis
-              dataKey="label"
-              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.4)', strokeWidth: 1 }}
-              tickLine={false}
-              tick={{ fill: 'hsl(var(--foreground))', fontSize: 12, fontWeight: 500 }}
-              dy={15} // Pushes labels down away from the bars
-              interval={0} // Shows all labels if space allows
-            />
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart 
+              data={trendData} 
+              margin={{ top: 0, right: 0, left: -20, bottom: 10 }}
+              barGap={6}
+            >
+              <CartesianGrid 
+                vertical={false} 
+                strokeDasharray="3 3" 
+                stroke="#f1f5f9" 
+              />
 
-            {/* Y-AXIS: Clearly marked with integers */}
-            <YAxis
-              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.4)', strokeWidth: 1 }}
-              tickLine={false}
-              tick={{ fill: 'hsl(var(--foreground))', fontSize: 12, fontWeight: 500 }}
-              dx={-10} // Moves numbers left away from the grid
-              allowDecimals={false} // Clean integers for policy counts
-            />
+              <XAxis
+                dataKey="label"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: '#64748b', fontSize: 10, fontWeight: 600 }}
+                dy={15}
+              />
 
-            <Tooltip
-              cursor={{ fill: "hsl(var(--muted)/0.15)" }}
-              contentStyle={{
-                backgroundColor: "hsl(var(--card))",
-                border: "1px solid hsl(var(--border))",
-                borderRadius: "12px",
-                boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)"
-              }}
-            />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: '#64748b', fontSize: 10, fontWeight: 600 }}
+                allowDecimals={false}
+              />
 
-            <Legend 
-              verticalAlign="top" 
-              align="right" 
-              iconType="circle" 
-              wrapperStyle={{ paddingBottom: '30px' }} 
-            />
-            
-            <Bar
-              dataKey="created"
-              name="New Policies"
-              fill="hsl(var(--primary))"
-              radius={[4, 4, 0, 0]}
-              barSize={24}
-            />
-            <Bar
-              dataKey="renewed"
-              name="Renewed"
-              fill="#10b981"
-              radius={[4, 4, 0, 0]}
-              barSize={24}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+              <Tooltip
+                cursor={{ fill: "#f8fafc" }}
+                contentStyle={{
+                  backgroundColor: "#fff",
+                  border: "none",
+                  borderRadius: "12px",
+                  boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+                  fontSize: "12px",
+                  fontWeight: "bold"
+                }}
+              />
+
+              <Legend 
+                verticalAlign="top" 
+                align="right" 
+                iconType="circle" 
+                wrapperStyle={{ paddingBottom: '25px', fontSize: '11px', fontWeight: 'bold' }} 
+              />
+              
+              <Bar
+                dataKey="active"
+                name="Active"
+                fill="#10b981"
+                radius={[4, 4, 0, 0]}
+                barSize={16}
+              />
+              <Bar
+                dataKey="renewed"
+                name="Renewed"
+                fill="#3b82f6"
+                radius={[4, 4, 0, 0]}
+                barSize={16}
+              />
+              <Bar
+                dataKey="expired"
+                name="Expired"
+                fill="#f43f5e"
+                radius={[4, 4, 0, 0]}
+                barSize={16}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
     </Card>
   );
 };

@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { 
   Send, CheckCircle, Clock, XCircle, FileX, 
-  Search, X, RotateCcw, User, Shield 
+  Search, X, RotateCcw, User, Shield, Download 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -67,27 +67,72 @@ export const PolicyTable = ({
     }
   };
 
+  const exportToCSV = () => {
+    if (!filteredData || filteredData.length === 0) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    const headers = ["Plate", "Owner", "Contact", "Company", "Expiry Date", "Status"];
+    const rows = filteredData.map((p: any) => [
+      p.plate,
+      p.owner,
+      p.contact,
+      p.company,
+      p.expiryDate,
+      p.followup_status || "Pending"
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `policy_report_${new Date().toLocaleDateString()}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({ title: "Export Complete", description: "Your CSV file is ready." });
+  };
+
   return (
     <div className="space-y-6">
-      {searchable && (
-        <div className="relative flex items-center max-w-md group">
-          <Search className="absolute left-4 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-          <Input
-            placeholder="Search records (Plate, Owner, or Contact)..."
-            className="pl-11 h-12 bg-card border-muted-foreground/20 rounded-2xl shadow-sm focus-visible:ring-primary focus-visible:border-primary text-base"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button 
-              className="absolute right-4 p-1 hover:bg-muted rounded-full transition-colors"
-              onClick={() => setSearchQuery("")} 
-            >
-              <X className="h-4 w-4 text-muted-foreground" />
-            </button>
-          )}
-        </div>
-      )}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {searchable && (
+          <div className="relative flex items-center flex-1 max-w-md group">
+            <Search className="absolute left-4 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+            <Input
+              placeholder="Search records (Plate, Owner, or Contact)..."
+              className="pl-11 h-12 bg-card border-muted-foreground/20 rounded-2xl shadow-sm focus-visible:ring-primary focus-visible:border-primary text-base"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button 
+                className="absolute right-4 p-1 hover:bg-muted rounded-full transition-colors"
+                onClick={() => setSearchQuery("")} 
+              >
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            )}
+          </div>
+        )}
+
+        <Button 
+          onClick={exportToCSV}
+          variant="outline" 
+          className="h-12 px-6 rounded-2xl gap-2 font-black uppercase text-[11px] tracking-widest border-muted-foreground/20 hover:bg-primary hover:text-primary-foreground transition-all shadow-sm"
+        >
+          <Download size={16} />
+          Export CSV
+        </Button>
+      </div>
 
       <div className="rounded-[24px] border border-muted/40 bg-card shadow-xl overflow-hidden backdrop-blur-md">
         <Table>
@@ -116,14 +161,12 @@ export const PolicyTable = ({
                       status === "missed" && "bg-rose-500/5 hover:bg-rose-500/10"
                     )}
                   >
-                    {/* PLATE - High Impact Font */}
                     <TableCell className="pl-8 py-5">
                       <span className="text-xl font-black tracking-tighter text-foreground font-mono bg-muted/40 px-3 py-1 rounded-lg border border-muted-foreground/10">
                         {policy.plate}
                       </span>
                     </TableCell>
 
-                    {/* OWNER */}
                     <TableCell>
                       <div className="flex flex-col">
                         <span className="font-bold text-sm text-foreground flex items-center gap-1.5">
@@ -134,7 +177,6 @@ export const PolicyTable = ({
                       </div>
                     </TableCell>
 
-                    {/* COMPANY */}
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Shield size={14} className="text-primary/60" />
@@ -142,12 +184,10 @@ export const PolicyTable = ({
                       </div>
                     </TableCell>
 
-                    {/* EXPIRY */}
                     <TableCell className="text-center">
                       <span className="text-sm font-bold text-muted-foreground">{policy.expiryDate}</span>
                     </TableCell>
 
-                    {/* OVERDUE - Large Font */}
                     {showOverdue && (
                       <TableCell className="text-center">
                         <div className="flex flex-col items-center">
@@ -159,7 +199,6 @@ export const PolicyTable = ({
                       </TableCell>
                     )}
 
-                    {/* ACTIONS */}
                     <TableCell className="pr-8">
                       <div className="flex justify-end gap-2 items-center">
                         {status && (
@@ -225,7 +264,6 @@ export const PolicyTable = ({
   );
 };
 
-// Helper Action Button Component
 const ActionButton = ({ icon: Icon, active, color, onClick }: any) => {
   const colorMap: any = {
     blue: active ? "bg-blue-600 text-white shadow-blue-200" : "text-blue-600 bg-blue-500/10 hover:bg-blue-500/20",

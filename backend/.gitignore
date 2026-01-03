@@ -5,7 +5,7 @@ backend/node_modules/
 
 # Ignore environment variables (Security)
 .env
-backend/.env
+.env
 
 # Ignore build folders
 client/dist/

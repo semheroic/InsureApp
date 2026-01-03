@@ -1,10 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { UserPlus, Search, Mail, Phone, Edit, Trash2, Eye } from "lucide-react";
+import { UserPlus, Search, Mail, Phone, Edit, Trash2, Eye, Download, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import {  Download } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Table,
@@ -41,6 +40,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 type User = {
   id: number;
@@ -54,14 +54,18 @@ type User = {
   joinDate: string;
 };
 
-const API_URL = "http://localhost:5000/users";
+// --- API CONFIGURATION ---
+const BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
+const API_URL = `${BASE}/users`;
 
 const Users = () => {
   const { toast } = useToast();
 
+  // --- State Management ---
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<{ id: number; role: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -84,15 +88,11 @@ const Users = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   /** ==================== AUTH & DATA FETCH ==================== */
-  /** ==================== AUTH & DATA FETCH ==================== */
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Identify logged in user & their role
-      const meRes = await fetch("http://localhost:5000/auth/me", { 
-        credentials: "include" // Correct
-      });
-      
+      // Get current logged in user role
+      const meRes = await fetch(`${BASE}/auth/me`, { credentials: "include" });
       if (meRes.ok) {
         const meData = await meRes.json();
         setCurrentUser({ 
@@ -101,209 +101,159 @@ const Users = () => {
         });
       }
 
-      // 2. Fetch all users - ADDED CREDENTIALS HERE
-      const res = await fetch(API_URL, { 
-        credentials: "include" // This was missing and caused the 401
-      });
-
-      if (!res.ok) throw new Error("Unauthorized access to user list");
+      // Get user list
+      const res = await fetch(API_URL, { credentials: "include" });
+      if (!res.ok) throw new Error("Unauthorized");
 
       const data = await res.json();
       const formatted: User[] = data.map((u: any) => ({
         ...u,
-        initials: u.name.split(" ").map((n: string) => n[0]).join("").toUpperCase(),
-        joinDate: u.joined_date,
-        profile_picture: u.profile_picture ? `http://localhost:5000${u.profile_picture}` : undefined,
+        initials: u.name ? u.name.split(" ").map((n: string) => n[0]).join("").toUpperCase() : "??",
+        joinDate: u.joined_date || u.created_at || "N/A",
+        profile_picture: u.profile_picture ? (u.profile_picture.startsWith('http') ? u.profile_picture : `${BASE}${u.profile_picture}`) : undefined,
       }));
       setUsers(formatted);
     } catch (err) {
       console.error("Fetch error:", err);
-      toast({ title: "Error", description: "Session expired or unauthorized.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to load users.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const isAdmin = currentUser?.role === "admin";
 
   /** ==================== API ACTIONS ==================== */
-/** ==================== API ACTIONS ==================== */
   const handleAdd = async () => {
+    if (!isAdmin) return;
+    setIsProcessing(true);
     try {
       const form = new FormData();
       Object.entries(formData).forEach(([key, value]) => {
-        if (value) form.append(key, value);
+        if (value !== null && value !== "") form.append(key, value);
       });
 
-      const res = await fetch(API_URL, { 
-        method: "POST", 
-        body: form,
-        credentials: "include" // REQUIRED: Sends cookies to backend
-      });
-
-      if (!res.ok) throw new Error("Unauthorized or server error");
+      const res = await fetch(API_URL, { method: "POST", body: form, credentials: "include" });
+      if (!res.ok) throw new Error("Server error");
       
       await fetchData();
       setIsAddDialogOpen(false);
       setFormData({ name: "", email: "", phone: "", password: "", role: "User", status: "Active", profile_picture: null });
       toast({ title: "Success", description: "User created successfully." });
     } catch (err) {
-      toast({ title: "Action Failed", description: "You don't have permission to add users.", variant: "destructive" });
-    }
+      toast({ title: "Action Failed", description: "Could not add user.", variant: "destructive" });
+    } finally { setIsProcessing(false); }
   };
 
   const handleEdit = async () => {
-    if (!selectedUser) return;
+    if (!isAdmin || !selectedUser) return;
+    setIsProcessing(true);
     try {
       const form = new FormData();
       Object.entries(formData).forEach(([key, value]) => {
-        if (value) form.append(key, value);
+        if (value !== null && value !== "") form.append(key, value);
       });
 
-      const res = await fetch(`${API_URL}/${selectedUser.id}`, { 
-        method: "PUT", 
-        body: form,
-        credentials: "include" // REQUIRED: Sends cookies to backend
-      });
-
-      if (!res.ok) throw new Error("Unauthorized or server error");
+      const res = await fetch(`${API_URL}/${selectedUser.id}`, { method: "PUT", body: form, credentials: "include" });
+      if (!res.ok) throw new Error("Update failed");
       
       await fetchData();
       setIsEditDialogOpen(false);
       toast({ title: "Updated", description: "User details saved." });
     } catch (err) {
-      toast({ title: "Update Failed", description: "You don't have permission to edit this user.", variant: "destructive" });
-    }
+      toast({ title: "Update Failed", description: "Check permissions.", variant: "destructive" });
+    } finally { setIsProcessing(false); }
   };
 
   const handleDelete = async () => {
-    if (!selectedUser) return;
+    if (!isAdmin || !selectedUser) return;
     try {
-      const res = await fetch(`${API_URL}/${selectedUser.id}`, { 
-        method: "DELETE",
-        credentials: "include" // REQUIRED: Sends cookies to backend
-      });
-
-      if (!res.ok) throw new Error("Unauthorized or server error");
-      
+      const res = await fetch(`${API_URL}/${selectedUser.id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Delete failed");
       await fetchData();
       setIsDeleteDialogOpen(false);
       toast({ title: "Deleted", description: "User removed from system." });
     } catch (err) {
-      toast({ title: "Delete Failed", description: "You don't have permission to delete users.", variant: "destructive" });
+      toast({ title: "Delete Failed", description: "Action unauthorized.", variant: "destructive" });
     }
   };
-  /** ==================== HELPERS ==================== */
-  // FIXED: Case-insensitive check against normalized role
-  const isAdmin = currentUser?.role === "admin";
 
+  /** ==================== HELPERS ==================== */
   const getRoleBadge = (role: string) => {
-    const variants = {
-      Admin: "bg-destructive/10 text-destructive border-destructive/20",
-      Manager: "bg-primary/10 text-primary border-primary/20",
-      User: "bg-secondary text-secondary-foreground border-secondary",
-    };
-    return variants[role as keyof typeof variants] || "";
+    const r = role.toLowerCase();
+    if (r === "admin") return "bg-destructive/10 text-destructive border-destructive/20";
+    if (r === "manager") return "bg-primary/10 text-primary border-primary/20";
+    return "bg-secondary text-secondary-foreground border-secondary";
   };
 
   const getStatusBadge = (status: string) => 
-    status === "Active" 
-      ? "bg-success/10 text-success border-success/20" 
+    status.toLowerCase() === "active" 
+      ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" 
       : "bg-muted text-muted-foreground border-border";
 
   const filteredUsers = useMemo(() => {
     return users.filter(u => {
       const matchesSearch = u.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           u.email.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           u.phone.includes(searchQuery);
+                           u.email.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesRole = roleFilter === "all" || u.role.toLowerCase() === roleFilter;
       const matchesStatus = statusFilter === "all" || u.status.toLowerCase() === statusFilter;
       return matchesSearch && matchesRole && matchesStatus;
     });
   }, [users, searchQuery, roleFilter, statusFilter]);
 
-  if (loading) return <div className="p-20 text-center text-muted-foreground text-sm">Loading user directory...</div>;
-const exportToCSV = () => {
-  if (!users || users.length === 0) {
-    toast({
-      title: "No data to export",
-      variant: "destructive",
-    });
-    return;
-  }
+  const exportToCSV = () => {
+    if (!isAdmin || filteredUsers.length === 0) return;
+    const headers = ["Name", "Email", "Phone", "Role", "Status", "Joined"];
+    const rows = filteredUsers.map(u => [u.name, u.email, u.phone, u.role, u.status, u.joinDate]);
+    const csvContent = [headers.join(","), ...rows.map(r => r.map(c => `"${c}"`).join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `users_export_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
 
-  const headers = ["Username", "Email", "Role", "Created At"];
-  
-  const rows = users.map((user: any) => {
-    // 1. Handle Username fallback
-    const userName = user.username || user.name || user.full_name || "N/A";
-    
-    // 2. Handle Email
-    const userEmail = user.email || "N/A";
-    
-    // 3. Handle Role
-    const userRole = user.role || "N/A";
-    
-    // 4. Handle Date - Check for created_at OR createdAt
-    const dateValue = user.created_at || user.createdAt || user.date_joined;
-    const formattedDate = dateValue 
-      ? new Date(dateValue).toLocaleDateString('en-GB') // Results in DD/MM/YYYY
-      : "N/A";
+  if (loading) return <div className="p-20 text-center text-muted-foreground flex flex-col items-center gap-4">
+    <Loader2 className="animate-spin h-8 w-8 text-primary" />
+    <p>Syncing user directory...</p>
+  </div>;
 
-    return [userName, userEmail, userRole, formattedDate];
-  });
-
-  const csvContent = [
-    headers.join(","),
-    ...rows.map((row: any) => row.map((cell: any) => `"${cell}"`).join(","))
-  ].join("\n");
-
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.setAttribute("href", url);
-  link.setAttribute("download", `system_users_${new Date().toISOString().split('T')[0]}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  toast({ title: "Export Successful", description: "User list downloaded." });
-};
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header Section */}
       <div className="flex items-center justify-between">
-  <div>
-    <h1 className="text-3xl font-bold text-foreground tracking-tight">Users</h1>
-    <p className="text-muted-foreground mt-1 text-sm">Manage system access levels and profiles</p>
-  </div>
-  
-  <div className="flex gap-2">
-    {/* ROLE CHECK: Only Admin can see Export and Add buttons */}
-    {isAdmin && (
-      <>
-        <Button 
-          variant="outline" 
-          className="gap-2 shadow-sm" 
-          onClick={exportToCSV}
-        >
-          <Download className="w-4 h-4" /> Export CSV
-        </Button>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Users</h1>
+          <p className="text-muted-foreground text-sm">Manage system access levels and profiles</p>
+        </div>
+        <div className="flex gap-2">
+          {isAdmin && (
+            <>
+              <Button variant="outline" className="gap-2" onClick={exportToCSV}>
+                <Download className="w-4 h-4" /> Export CSV
+              </Button>
+              <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}>
+                <UserPlus className="w-4 h-4" /> Add User
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
 
-        <Button className="gap-2 shadow-sm" onClick={() => setIsAddDialogOpen(true)}>
-          <UserPlus className="w-4 h-4" /> Add User
-        </Button>
-      </>
-    )}
-  </div>
-</div>
-
-      {/* Filters */}
+      {/* Filter Section */}
       <Card className="p-6">
         <div className="flex flex-col md:flex-row items-center gap-4 mb-6">
           <div className="flex-1 w-full relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search name, email, or phone..." className="pl-10" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            <Input 
+              placeholder="Search name or email..." 
+              className="pl-10" 
+              value={searchQuery} 
+              onChange={e => setSearchQuery(e.target.value)} 
+            />
           </div>
           <div className="flex gap-2 w-full md:w-auto">
             <Select value={roleFilter} onValueChange={setRoleFilter}>
@@ -326,12 +276,12 @@ const exportToCSV = () => {
           </div>
         </div>
 
-        {/* Table */}
+        {/* Table Section */}
         <div className="rounded-xl border border-border overflow-hidden">
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>
-                <TableHead className="w-[300px]">User Profile</TableHead>
+                <TableHead>User Profile</TableHead>
                 <TableHead>Contact Info</TableHead>
                 <TableHead>Permissions</TableHead>
                 <TableHead>Status</TableHead>
@@ -340,61 +290,54 @@ const exportToCSV = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredUsers.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No users matching your search.</TableCell>
-                </TableRow>
-              ) : filteredUsers.map(user => {
+              {filteredUsers.map(user => {
                 const isMe = user.id === currentUser?.id;
                 return (
-                  <TableRow key={user.id} className={isMe ? "bg-primary/[0.02] transition-colors" : ""}>
+                  <TableRow key={user.id} className={cn(isMe && "bg-primary/[0.02]")}>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <Avatar className="w-10 h-10 border-2 border-background shadow-sm">
-                            {user.profile_picture ? <AvatarImage src={user.profile_picture} /> : <AvatarFallback>{user.initials}</AvatarFallback>}
-                          </Avatar>
-                          {isMe && (
-                            <span className="absolute -bottom-0.5 -right-0.5 block h-3 w-3 rounded-full bg-background flex items-center justify-center">
-                              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-                            </span>
-                          )}
-                        </div>
+                        <Avatar className="w-10 h-10 border shadow-sm">
+                          <AvatarImage src={user.profile_picture} />
+                          <AvatarFallback>{user.initials}</AvatarFallback>
+                        </Avatar>
                         <div className="flex flex-col">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-foreground text-sm">{user.name}</span>
-                            {isMe && <Badge className="h-4 px-1 text-[9px] bg-primary/10 text-primary border-none font-black tracking-tighter uppercase">Me</Badge>}
-                          </div>
+                          <span className="font-semibold text-sm flex items-center gap-1.5">
+                            {user.name} {isMe && <Badge className="text-[9px] h-4">Me</Badge>}
+                          </span>
                           <span className="text-xs text-muted-foreground truncate max-w-[150px]">{user.email}</span>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-                        <div className="flex items-center gap-1.5"><Mail className="w-3 h-3 opacity-70" /> {user.email}</div>
-                        <div className="flex items-center gap-1.5"><Phone className="w-3 h-3 opacity-70" /> {user.phone}</div>
+                       <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1.5"><Mail className="w-3 h-3" /> {user.email}</div>
+                        <div className="flex items-center gap-1.5"><Phone className="w-3 h-3" /> {user.phone}</div>
                       </div>
                     </TableCell>
-                    <TableCell><Badge className={`${getRoleBadge(user.role)} text-[10px] font-bold px-2 h-5`} variant="outline">{user.role}</Badge></TableCell>
-                    <TableCell><Badge className={`${getStatusBadge(user.status)} text-[10px] font-bold px-2 h-5`} variant="outline">{user.status}</Badge></TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{user.joinDate || "N/A"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={cn("text-[10px] font-bold px-2", getRoleBadge(user.role))}>
+                        {user.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={cn("text-[10px] font-bold px-2", getStatusBadge(user.status))}>
+                        {user.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{user.joinDate}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setSelectedUser(user); setIsViewDialogOpen(true); }}>
+                        <Button variant="ghost" size="icon" onClick={() => { setSelectedUser(user); setIsViewDialogOpen(true); }}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        
-                        {/* ROLE CHECK: Only Admins see Edit and Delete buttons */}
                         {isAdmin && (
                           <>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { 
-                              setSelectedUser(user); 
-                              setFormData({ name: user.name, email: user.email, phone: user.phone, role: user.role, status: user.status, password: "", profile_picture: null }); 
-                              setIsEditDialogOpen(true); 
-                            }}>
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" disabled={isMe} onClick={() => { setSelectedUser(user); setIsDeleteDialogOpen(true); }}>
+                            <Button variant="ghost" size="icon" onClick={() => {
+                              setSelectedUser(user);
+                              setFormData({ name: user.name, email: user.email, phone: user.phone, role: user.role, status: user.status, password: "", profile_picture: null });
+                              setIsEditDialogOpen(true);
+                            }}><Edit className="w-4 h-4" /></Button>
+                            <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" disabled={isMe} onClick={() => { setSelectedUser(user); setIsDeleteDialogOpen(true); }}>
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </>
@@ -409,39 +352,93 @@ const exportToCSV = () => {
         </div>
       </Card>
 
-      {/* VIEW USER DIALOG */}
-      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader><DialogTitle className="text-xl">Profile Snapshot</DialogTitle></DialogHeader>
-          {selectedUser && (
-            <div className="space-y-6 pt-4">
-              <div className="flex flex-col items-center">
-                <Avatar className="w-24 h-24 border-4 border-muted">
-                  {selectedUser.profile_picture ? <AvatarImage src={selectedUser.profile_picture} /> : <AvatarFallback className="text-3xl">{selectedUser.initials}</AvatarFallback>}
-                </Avatar>
-                <h3 className="mt-4 text-xl font-bold">{selectedUser.name}</h3>
-                <Badge className={getRoleBadge(selectedUser.role)} variant="outline">{selectedUser.role}</Badge>
+      {/* VIEW DIALOG */}
+     <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+  <DialogContent className="sm:max-w-[440px] p-0 overflow-hidden border-none shadow-2xl">
+    {selectedUser && (
+      <div className="flex flex-col">
+        {/* Top Header Section with subtle gradient background */}
+        <div className="bg-slate-50 dark:bg-slate-900/50 pt-10 pb-6 px-6 border-b">
+          <div className="flex flex-col items-center text-center">
+            <div className="relative group">
+              <div className="absolute -inset-1 bg-gradient-to-r from-primary to-blue-600 rounded-full blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
+              <Avatar className="w-28 h-28 border-4 border-background relative shadow-xl">
+                <AvatarImage src={selectedUser.profile_picture} className="object-cover" />
+                <AvatarFallback className="text-4xl font-bold bg-muted text-muted-foreground">
+                  {selectedUser.initials}
+                </AvatarFallback>
+              </Avatar>
+            </div>
+            
+            <h3 className="mt-4 text-2xl font-bold tracking-tight text-foreground">
+              {selectedUser.name}
+            </h3>
+            <div className="flex items-center gap-2 mt-1.5">
+              <Badge className={cn("px-3 py-0.5 font-semibold uppercase tracking-wider text-[10px]", getRoleBadge(selectedUser.role))}>
+                {selectedUser.role}
+              </Badge>
+              <div className={cn("h-1.5 w-1.5 rounded-full", 
+                selectedUser.status.toLowerCase() === "active" ? "bg-emerald-500 animate-pulse" : "bg-slate-300"
+              )} />
+            </div>
+          </div>
+        </div>
+
+        {/* Details Grid with Icons */}
+        <div className="p-8 grid grid-cols-1 gap-6 bg-background">
+          <div className="space-y-4">
+            <div className="flex items-center gap-4 group">
+              <div className="p-2.5 rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                <Mail size={18} />
               </div>
-              <div className="grid grid-cols-2 gap-y-4 text-sm border-t pt-6">
-                <div><Label className="text-muted-foreground">Email</Label><p className="font-medium truncate">{selectedUser.email}</p></div>
-                <div><Label className="text-muted-foreground">Phone</Label><p className="font-medium">{selectedUser.phone}</p></div>
-                <div><Label className="text-muted-foreground">Status</Label><p><Badge className={getStatusBadge(selectedUser.status)} variant="outline">{selectedUser.status}</Badge></p></div>
-                <div><Label className="text-muted-foreground">Joined</Label><p className="font-medium">{selectedUser.joinDate}</p></div>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Email Address</span>
+                <span className="text-sm font-medium">{selectedUser.email}</span>
               </div>
             </div>
-          )}
-          <DialogFooter><Button className="w-full" onClick={() => setIsViewDialogOpen(false)}>Done</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* ADD USER DIALOG */}
+            <div className="flex items-center gap-4 group">
+              <div className="p-2.5 rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                <Phone size={18} />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Phone Number</span>
+                <span className="text-sm font-medium">{selectedUser.phone || "Not provided"}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-4 border-t mt-4">
+              <div className="flex flex-col space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Status</span>
+                <Badge variant="outline" className={cn("w-fit font-bold", getStatusBadge(selectedUser.status))}>
+                  {selectedUser.status}
+                </Badge>
+              </div>
+              <div className="flex flex-col space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Member Since</span>
+                <span className="text-sm font-semibold">{selectedUser.joinDate}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="p-6 pt-0 bg-background">
+          <Button variant="secondary" className="w-full font-semibold shadow-sm" onClick={() => setIsViewDialogOpen(false)}>
+            Close Profile
+          </Button>
+        </DialogFooter>
+      </div>
+    )}
+  </DialogContent>
+</Dialog>
+      {/* ADD DIALOG */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Register New User</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2"><Label>Full Name</Label><Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Email Address</Label><Input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Phone Number</Label><Input value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>Email</Label><Input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>Phone</Label><Input value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
             <div className="grid gap-2"><Label>Password</Label><Input type="password" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2"><Label>Role</Label>
@@ -457,16 +454,17 @@ const exportToCSV = () => {
                 </Select>
               </div>
             </div>
-            <div className="grid gap-2"><Label>Profile Photo</Label><Input type="file" accept="image/*" className="cursor-pointer" onChange={e => setFormData({ ...formData, profile_picture: e.target.files?.[0] || null })} /></div>
+            <div className="grid gap-2"><Label>Profile Photo</Label><Input type="file" accept="image/*" onChange={e => setFormData({ ...formData, profile_picture: e.target.files?.[0] || null })} /></div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Create Account</Button>
+          <DialogFooter>
+            <Button disabled={isProcessing} onClick={handleAdd}>
+              {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Create Account
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* EDIT USER DIALOG */}
+      {/* EDIT DIALOG */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Modify User Profile</DialogTitle></DialogHeader>
@@ -490,9 +488,10 @@ const exportToCSV = () => {
               </div>
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setIsEditDialogOpen(false)}>Discard</Button>
-            <Button onClick={handleEdit}>Update Profile</Button>
+          <DialogFooter>
+            <Button disabled={isProcessing} onClick={handleEdit}>
+              {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Update Profile
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -502,9 +501,7 @@ const exportToCSV = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Permanent Deletion?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will revoke all access for <strong>{selectedUser?.name}</strong>. Their profile data will be permanently removed.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Remove <strong>{selectedUser?.name}</strong>? This action is permanent and cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep User</AlertDialogCancel>

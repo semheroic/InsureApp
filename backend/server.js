@@ -30,26 +30,28 @@ app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // ======================== DATABASE ========================
-const db = mysql.createConnection({
+const db = mysql.createPool({
   host: process.env.DB_HOST || "localhost",
   user: process.env.DB_USER || "root",
   password: process.env.DB_PASS || "",
   database: process.env.DB_NAME || "InsureApp",
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
   multipleStatements: true,
 });
-
-db.connect(err => {
-  if (err) {
-    console.error("❌ Database connection failed:", err.message);
-    process.exit(1);
-  }
-  console.log("✅ Connected to MySQL database");
-});
-
 const query = util.promisify(db.query).bind(db);
 
 // ======================== SESSION ========================
-const sessionStore = new MySQLStore({}, db);
+const sessionStore = new MySQLStore(
+  {
+    clearExpired: true,
+    checkExpirationInterval: 15 * 60 * 1000, // 15 min
+    expiration: 8 * 60 * 60 * 1000 // 8 hours
+  },
+  db
+);
+
 app.use(session({
   key: "insureapp_session",
   secret: process.env.SESSION_SECRET || "supersecretkey",
@@ -238,14 +240,55 @@ const isAdmin = (req, res, next) => {
 };
 // ======================== AUTH ROUTES ========================
 // Login / Logout / Me
-app.post("/auth/login", async (req,res)=>{ try{
-  const {email,password} = req.body; if(!email||!password) return res.status(400).json({error:"Email and password required"});
-  const users = await query("SELECT * FROM users WHERE email=?",[email]); if(!users.length) return res.status(401).json({error:"Invalid email or password"});
-  const user = users[0]; const valid = await bcrypt.compare(password,user.password); if(!valid) return res.status(401).json({error:"Invalid email or password"});
-  req.session.userId = user.id; req.session.userRole = user.role;
-  res.json({id:user.id,name:user.name,email:user.email,role:user.role});
-}catch(err){res.status(500).json({error:err.message});}});
+app.post("/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password required" });
+    }
 
+    // 1. Fetch user by email
+    const users = await query("SELECT * FROM users WHERE email = ?", [email]);
+
+    if (!users.length) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+
+    const user = users[0];
+
+    // 2. Check if the status is 'Inactive' (Matching your MariaDB Enum)
+    if (user.status === 'Inactive') {
+      // 3. Fetch an Admin's phone number for the message
+      const admins = await query("SELECT phone FROM users WHERE role = 'Admin' LIMIT 1");
+      const adminPhone = (admins.length > 0) ? admins[0].phone : "System Administrator";
+
+      return res.status(403).json({ 
+        error: `Account inactive. Please contact Administrators at ${adminPhone} for more information.` 
+      });
+    }
+
+    // 4. Verify password for 'Active' users
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
+
+    // 5. Successful login: Set session
+    req.session.userId = user.id;
+    req.session.userRole = user.role;
+
+    res.json({ 
+      id: user.id, 
+      name: user.name, 
+      email: user.email, 
+      role: user.role 
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 app.post("/auth/logout", isAuthenticated, (req,res)=>{ req.session.destroy(err=>{ if(err) return res.status(500).json({error:"Logout failed"}); res.clearCookie("insureapp_session"); res.json({message:"Logged out"}); }); });
 
 app.get("/auth/me", isAuthenticated, async (req, res) => {
@@ -314,24 +357,22 @@ app.get("/users/:id", async (req, res) => {
 app.post("/users", isAdmin, upload.single("profile_picture"), async (req, res) => {
   try {
     const { name, email, phone, password, role } = req.body;
+    const finalRole = role || "User"; // Define the role once to use in DB and Email
 
     // 1. Basic Validation
     if (!name || !email || !password || !phone) {
       return res.status(400).json({ error: "Name, email, password, and phone are required" });
     }
 
-    // 2. CHECK IF PHONE OR EMAIL EXISTS (Using exact matches)
-    // This will look for the exact string provided (e.g., "+250..." or "078...")
+    // 2. CHECK IF PHONE OR EMAIL EXISTS
     const existingUser = await query(
       "SELECT email, phone FROM users WHERE email = ? OR phone = ?", 
       [email, phone]
     );
 
     if (existingUser.length > 0) {
-      // Find specifically which one caused the conflict
       const isEmailConflict = existingUser.some(u => u.email === email);
       const conflict = isEmailConflict ? "Email" : "Phone number";
-      
       return res.status(400).json({ error: `${conflict} is already registered.` });
     }
 
@@ -339,32 +380,36 @@ app.post("/users", isAdmin, upload.single("profile_picture"), async (req, res) =
     const hashed = await bcrypt.hash(password, 10);
     const profile_picture = req.file ? `/uploads/${req.file.filename}` : null;
 
-    // 4. Insert User with original phone string
+    // 4. Insert User
     const result = await query(
       "INSERT INTO users (name, email, phone, password, role, profile_picture) VALUES (?,?,?,?,?,?)",
-      [name, email, phone, hashed, role || "User", profile_picture]
+      [name, email, phone, hashed, finalRole, profile_picture]
     );
 
-    // --- SEND EMAIL ---
+    // --- SEND EMAIL (Updated with Role) ---
     const mailOptions = {
       from: '"System Administrator" <your-email@gmail.com>',
       to: email,
       subject: "Welcome to the System - Your Credentials",
       html: `
-        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee;">
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; line-height: 1.6;">
           <h2 style="color: #2563eb;">Welcome, ${name}!</h2>
-          <p>Your account has been created successfully.</p>
-          <div style="background: #f8fafc; padding: 15px; border-radius: 8px;">
-            <p><strong>Email:</strong> ${email}</p>
-            <p><strong>Password:</strong> ${password}</p>
+          <p>Your account has been created successfully by the Administrator.</p>
+          <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <p style="margin: 5px 0;"><strong>Email:</strong> ${email}</p>
+            <p style="margin: 5px 0;"><strong>Password:</strong> ${password}</p>
+            <p style="margin: 5px 0;"><strong>Assigned Role:</strong> <span style="color: #1e40af; font-weight: bold;">${finalRole}</span></p>
           </div>
+          <p style="margin-top: 15px; font-size: 0.9em; color: #64748b;">
+            Please log in and change your password as soon as possible for security reasons.
+          </p>
         </div>
       `,
     };
 
     await transporter.sendMail(mailOptions);
 
-    res.status(201).json({ id: result.insertId, name, email, role: role || "User" });
+    res.status(201).json({ id: result.insertId, name, email, role: finalRole });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -377,6 +422,7 @@ app.put("/users/:id", upload.single("profile_picture"), async (req, res) => {
     const updates = [];
     const values = [];
 
+    // 1. Prepare Update Fields
     if (name) { updates.push("name=?"); values.push(name); }
     if (email) { updates.push("email=?"); values.push(email); }
     if (phone) { updates.push("phone=?"); values.push(phone); }
@@ -386,53 +432,111 @@ app.put("/users/:id", upload.single("profile_picture"), async (req, res) => {
     if (req.file) { updates.push("profile_picture=?"); values.push(`/uploads/${req.file.filename}`); }
 
     if (updates.length === 0) return res.status(400).json({ error: "No fields to update" });
+    
     values.push(req.params.id);
 
-    // Fetch user details before update to get the email address
-    const userResult = await query("SELECT email, name FROM users WHERE id=?", [req.params.id]);
+    // 2. Fetch current details
+    const userResult = await query("SELECT email, name, role FROM users WHERE id=?", [req.params.id]);
+    if (!userResult.length) return res.status(404).json({ error: "User not found" });
     const user = userResult[0];
 
+    // 3. Perform the update
     await query(`UPDATE users SET ${updates.join(", ")} WHERE id=?`, values);
 
-    // --- SEND EMAIL ---
+    // 4. Send Response IMMEDIATELY to stop the "Loading" state in React
+    res.json({ message: "User updated successfully. Notification sending in background." });
+
+    // 5. Send Email in the background (Notice: No 'await' here)
+    const recipientEmail = email || user.email;
     const mailOptions = {
       from: '"System Administrator" <your-email@gmail.com>',
-      to: user.email,
+      to: recipientEmail,
       subject: "Account Update Notification",
       html: `
-        <h3>Hello ${user.name},</h3>
-        <p>Your profile information was recently updated.</p>
-        ${password ? `<p><strong>Note:</strong> Your password has been reset to: <b>${password}</b></p>` : `<p>Your profile details (name/role/contact) were updated.</p>`}
-        <p>If you did not authorize this change, please contact support immediately.</p>
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee;">
+          <h3 style="color: #333;">Hello ${name || user.name},</h3>
+          <p>This is to inform you that your profile information has been updated.</p>
+          <div style="background: #f9f9f9; padding: 15px; border-radius: 5px; margin-top: 10px;">
+            ${password ? `<p><strong>Security Notice:</strong> Your password has been updated by the admin.</p>` : ''}
+            ${role ? `<p><strong>New Role:</strong> ${role}</p>` : ''}
+            ${status ? `<p><strong>Status:</strong> ${status}</p>` : ''}
+          </div>
+        </div>
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    // Remove 'await' so it doesn't block the response
+    transporter.sendMail(mailOptions).catch(err => {
+      console.error("Background Email Error:", err);
+    });
 
-    res.json({ message: "User updated and notified" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Only send error if headers haven't been sent yet
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 // ---------------- DEACTIVATE USER ----------------
-app.delete("/users/:id",isAdmin, async (req, res) => {
+app.delete("/users/:id", isAdmin, async (req, res) => {
   try {
-    const userResult = await query("SELECT email, name FROM users WHERE id=?", [req.params.id]);
+    const targetUserId = req.params.id;
+
+    // 1. Fetch user info AND admin info in parallel (Faster than 2 separate awaits)
+    const [userResult, adminResult] = await Promise.all([
+      query("SELECT email, name FROM users WHERE id=?", [targetUserId]),
+      query("SELECT phone FROM users WHERE role = 'Admin' LIMIT 1")
+    ]);
+    
+    if (!userResult.length) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
     const user = userResult[0];
+    const adminPhone = (adminResult.length > 0) ? adminResult[0].phone : "[System Admin Office]";
 
-    await query("UPDATE users SET status='Inactive' WHERE id=?", [req.params.id]);
+    // 2. Perform the soft-delete
+    await query("UPDATE users SET status='Inactive' WHERE id=?", [targetUserId]);
 
-    // --- SEND EMAIL ---
-    await transporter.sendMail({
+    // --- KEY CHANGE: RESPOND FIRST ---
+    // This tells the React frontend to close the dialog and show "Success" immediately.
+    res.json({ message: "User deactivated and notified" });
+
+    // --- BACKGROUND TASK: SEND EMAIL ---
+    // We remove the 'await' here so the server processes this while the user is already back at the dashboard.
+    transporter.sendMail({
       from: '"System Administrator" <your-email@gmail.com>',
       to: user.email,
-      subject: "Account Status Change",
-      html: `<h3>Account Deactivated</h3><p>Hi ${user.name}, your account is now <b>Inactive</b>. You cannot log in until it is reactivated.</p>`,
+      subject: "Important: Your Account has been Deactivated",
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+          <h2 style="color: #dc2626;">Account Deactivated</h2>
+          <p>Hi <b>${user.name}</b>,</p>
+          <p>This is to inform you that your account status has been changed to <b>Inactive</b>. You will no longer be able to log in to the system.</p>
+          
+          <div style="margin-top: 20px; padding: 15px; background-color: #fef2f2; border-left: 4px solid #dc2626;">
+            <p style="margin: 0; font-weight: bold;">Need to reactivate your account?</p>
+            <p style="margin: 10px 0 0 0;">Please contact the Administrator at: 
+              <span style="color: #2563eb; font-size: 1.1em; font-weight: bold;">${adminPhone}</span>
+            </p>
+          </div>
+          
+          <p style="margin-top: 20px; font-size: 0.85em; color: #666;">
+            This is an automated notification.
+          </p>
+        </div>
+      `,
+    }).catch(emailErr => {
+      // Since we already sent the response to the user, we just log errors here.
+      console.error("Background Email Error:", emailErr);
     });
 
-    res.json({ message: "User deactivated and notified" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    // Only send error if the response wasn't already sent above.
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to deactivate user" });
+    }
   }
 });
 // ======================== POLICIES CRUD + SMS ========================

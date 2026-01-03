@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Search, Bell, LogOut, Edit, AlertCircle, Sun, Moon,
   Timer, Inbox, Check, FileText, Users as UsersIcon,
-  BarChart3, History, PhoneCall, LayoutDashboard, ArrowLeft, Eye
+  BarChart3, History, PhoneCall, LayoutDashboard, ArrowLeft, Eye, ShieldCheck, UserCircle
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-const API_URL = "http://localhost:5000";
+const API_URL = import.meta.env.VITE_API_URL;
 const SESSION_DURATION_HOURS = 8;
 
 export const Header = () => {
@@ -33,9 +33,9 @@ export const Header = () => {
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "light");
   const [timeLeft, setTimeLeft] = useState("");
   const [progress, setProgress] = useState(100);
-  
-  // WhatsApp-style View State
   const [selectedLog, setSelectedLog] = useState<any>(null);
+
+  const isAdmin = useMemo(() => user.role?.toLowerCase() === "admin", [user.role]);
 
   // --- GLOBAL SEARCH LOGIC ---
   const commandResults = useMemo(() => {
@@ -87,14 +87,12 @@ export const Header = () => {
     return () => clearInterval(interval);
   }, [navigate]);
 
-  // --- THEME LOGIC ---
   useEffect(() => {
     const root = window.document.documentElement;
     theme === "dark" ? root.classList.add("dark") : root.classList.remove("dark");
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  // --- SESSION TIMER ---
   const handleLogout = async () => {
     localStorage.removeItem("login_time");
     await fetch(`${API_URL}/auth/logout`, { method: "POST", credentials: "include" });
@@ -122,30 +120,30 @@ export const Header = () => {
   }, [notifications, activeTab]);
 
   return (
-    <header className="fixed top-0 right-0 left-[280px] h-16 border-b bg-background/80 backdrop-blur-xl z-50">
-      <div className="h-full px-6 flex justify-between items-center">
+    <header className="fixed top-0 right-0 left-[280px] h-16 border-b border-muted/30 bg-background/60 backdrop-blur-md z-50">
+      <div className="h-full px-8 flex justify-between items-center">
         
         {/* GLOBAL SEARCH */}
-        <div className="flex items-center gap-4 flex-1 max-w-md relative">
+        <div className="flex items-center gap-6 flex-1 max-w-md relative">
           <div className="relative w-full group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-all duration-300" />
             <Input 
               ref={searchInputRef}
-              placeholder="Search or type commands..." 
+              placeholder="Quick search..." 
               value={search} 
               onFocus={() => setIsSearchOpen(true)}
               onBlur={() => setTimeout(() => setIsSearchOpen(false), 200)}
               onChange={(e) => setSearch(e.target.value)} 
-              className="pl-10 pr-12 bg-muted/40 border-none h-10 rounded-xl" 
+              className="pl-11 pr-12 bg-muted/30 hover:bg-muted/50 border-none h-11 rounded-2xl transition-all duration-300 ring-offset-background focus-visible:ring-2 focus-visible:ring-primary/20" 
             />
             {isSearchOpen && search.length > 0 && (
-              <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-popover border border-muted/40 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                <div className="max-h-[350px] overflow-y-auto p-2">
+              <div className="absolute top-[calc(100%+12px)] left-0 w-full bg-background/95 backdrop-blur-xl border border-muted/40 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="max-h-[350px] overflow-y-auto p-2 scrollbar-none">
                   {commandResults.map((cmd, i) => (
-                    <button key={i} onClick={() => { if (cmd.path) navigate(cmd.path); if (cmd.action) cmd.action(); setSearch(""); setIsSearchOpen(false); }} className="w-full flex items-center justify-between p-3 hover:bg-muted rounded-xl transition-all group">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-muted group-hover:bg-background rounded-lg transition-colors"><cmd.icon className="w-4 h-4 text-primary" /></div>
-                        <div><p className="text-sm font-bold">{cmd.title}</p><p className="text-[10px] text-muted-foreground uppercase font-black">{cmd.category}</p></div>
+                    <button key={i} onClick={() => { if (cmd.path) navigate(cmd.path); if (cmd.action) cmd.action(); setSearch(""); setIsSearchOpen(false); }} className="w-full flex items-center justify-between p-3 hover:bg-primary/5 rounded-xl transition-all group">
+                      <div className="flex items-center gap-4">
+                        <div className="p-2.5 bg-muted group-hover:bg-primary/10 rounded-xl transition-colors"><cmd.icon className="w-4 h-4 text-primary" /></div>
+                        <div className="text-left"><p className="text-sm font-semibold">{cmd.title}</p><p className="text-[9px] text-muted-foreground uppercase font-bold tracking-wider">{cmd.category}</p></div>
                       </div>
                     </button>
                   ))}
@@ -153,90 +151,90 @@ export const Header = () => {
               </div>
             )}
           </div>
-          <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} className="rounded-xl shrink-0">
-            {theme === "light" ? <Moon className="w-5 h-5 text-slate-700" /> : <Sun className="w-5 h-5 text-yellow-400" />}
+          <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} className="rounded-2xl shrink-0 hover:bg-muted/50 transition-colors h-11 w-11">
+            {theme === "light" ? <Moon className="w-5 h-5 text-slate-700" /> : <Sun className="w-5 h-5 text-yellow-500" />}
           </Button>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           {/* NOTIFICATION DROPDOWN */}
           <DropdownMenu onOpenChange={(open) => { if(!open) setSelectedLog(null); }}>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className={cn("relative w-10 h-10 rounded-xl transition-all", unreadCount > 0 && "bg-primary/5")}>
-                <Bell className={cn("w-5 h-5", unreadCount > 0 ? "text-primary animate-pulse" : "text-muted-foreground")} />
-                {unreadCount > 0 && <span className="absolute top-2.5 right-2.5 h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-background" />}
+              <Button variant="ghost" size="icon" className={cn("relative w-11 h-11 rounded-2xl transition-all duration-300 hover:bg-muted/50", unreadCount > 0 && "bg-primary/5")}>
+                <Bell className={cn("w-5 h-5 transition-transform duration-300", unreadCount > 0 ? "text-primary animate-ring" : "text-muted-foreground")} />
+                {unreadCount > 0 && <span className="absolute top-3 right-3 h-2.5 w-2.5 rounded-full bg-primary ring-4 ring-background shadow-sm" />}
               </Button>
             </DropdownMenuTrigger>
             
-            <DropdownMenuContent align="end" className="w-[400px] p-0 rounded-2xl border-muted/40 bg-popover shadow-2xl mt-2 overflow-hidden min-h-[420px]">
+            <DropdownMenuContent align="end" className="w-[420px] p-0 rounded-[24px] border-muted/30 bg-background/95 backdrop-blur-2xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] mt-4 overflow-hidden min-h-[420px] animate-in zoom-in-95 duration-200">
               {selectedLog ? (
-                /* --- FULL CONTENT VIEW --- */
-                <div className="flex flex-col h-full animate-in slide-in-from-right duration-300">
-                  <div className="p-4 border-b bg-muted/20 flex items-center gap-3">
-                    <Button variant="ghost" size="icon" onClick={() => setSelectedLog(null)} className="h-8 w-8 rounded-full">
+                <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
+                  <div className="p-5 border-b bg-muted/10 flex items-center gap-4">
+                    <Button variant="ghost" size="icon" onClick={() => setSelectedLog(null)} className="h-9 w-9 rounded-xl hover:bg-background">
                       <ArrowLeft className="w-4 h-4" />
                     </Button>
                     <div className="flex-1">
-                      <h3 className="font-bold text-sm tracking-tight">{selectedLog.phone_number}</h3>
-                      <p className="text-[10px] text-muted-foreground uppercase font-black tracking-tighter">Full Message View</p>
+                      <h3 className="font-bold text-sm tracking-tight text-foreground">{selectedLog.phone_number}</h3>
+                      <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest opacity-70">Message Details</p>
                     </div>
                   </div>
                   <div className="p-6 space-y-6">
-                    <div className="bg-muted/30 border border-muted/50 p-5 rounded-2xl rounded-tl-none">
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedLog.message}</p>
-                      <span className="text-[9px] text-muted-foreground block mt-4 text-right font-mono">
+                    <div className="bg-primary/[0.03] border border-primary/10 p-6 rounded-[20px] rounded-tl-none shadow-sm">
+                      <p className="text-[15px] leading-relaxed whitespace-pre-wrap text-foreground/90">{selectedLog.message}</p>
+                      <span className="text-[10px] text-muted-foreground block mt-6 text-right font-medium">
                         {new Date(selectedLog.created_at).toLocaleString()}
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="p-3 bg-muted/20 rounded-xl border border-muted/10 text-center">
-                        <p className="text-[9px] text-muted-foreground uppercase font-black mb-1 tracking-widest">Delivery Status</p>
-                        <Badge variant="outline" className="text-[10px] uppercase font-bold text-primary">{selectedLog.delivery_status}</Badge>
+                      <div className="p-4 bg-muted/20 rounded-2xl border border-muted/10">
+                        <p className="text-[9px] text-muted-foreground uppercase font-black mb-1.5 tracking-widest text-center">Status</p>
+                        <div className="flex justify-center"><Badge variant="secondary" className="text-[10px] uppercase font-bold bg-primary/10 text-primary border-none px-3">{selectedLog.delivery_status}</Badge></div>
                       </div>
-                      <div className="p-3 bg-muted/20 rounded-xl border border-muted/10 text-center">
-                        <p className="text-[9px] text-muted-foreground uppercase font-black mb-1 tracking-widest">SMS Cost</p>
-                        <p className="text-sm font-black font-mono">${selectedLog.cost || '0.00'}</p>
+                      <div className="p-4 bg-muted/20 rounded-2xl border border-muted/10 text-center">
+                        <p className="text-[9px] text-muted-foreground uppercase font-black mb-1.5 tracking-widest">Cost</p>
+                        <p className="text-sm font-black text-foreground font-mono">${selectedLog.cost || '0.00'}</p>
                       </div>
                     </div>
-                    <Button className="w-full rounded-xl shadow-lg shadow-primary/10 py-6" onClick={() => setSelectedLog(null)}>
+                    <Button className="w-full rounded-2xl shadow-xl shadow-primary/20 py-7 text-sm font-bold tracking-tight hover:scale-[1.02] active:scale-95 transition-all" onClick={() => setSelectedLog(null)}>
                       Back to Inbox
                     </Button>
                   </div>
                 </div>
               ) : (
-                /* --- LIST VIEW (NUMBERS ONLY) --- */
                 <>
-                  <div className="p-5 border-b bg-muted/10">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-bold text-base tracking-tight text-foreground">Notifications</h3>
-                      <Button variant="ghost" onClick={markAllRead} className="h-7 text-[10px] font-black text-primary hover:bg-primary/5 uppercase tracking-tighter">Mark All Read</Button>
+                  <div className="p-6 border-b bg-muted/10">
+                    <div className="flex justify-between items-center mb-5">
+                      <h3 className="font-bold text-lg tracking-tight">Inbox</h3>
+                      <Button variant="ghost" onClick={markAllRead} className="h-8 text-[11px] font-bold text-primary hover:bg-primary/5 uppercase tracking-wider">Mark all as read</Button>
                     </div>
-                    <div className="flex gap-2 p-1 bg-muted/50 rounded-xl border border-muted/20">
-                      <button onClick={() => setActiveTab("all")} className={cn("flex-1 text-[10px] font-black py-1.5 rounded-lg transition-all uppercase tracking-widest", activeTab === "all" ? "bg-background text-primary shadow-sm" : "text-muted-foreground")}>Inbox</button>
-                      <button onClick={() => setActiveTab("unread")} className={cn("flex-1 text-[10px] font-black py-1.5 rounded-lg transition-all uppercase tracking-widest", activeTab === "unread" ? "bg-background text-primary shadow-sm" : "text-muted-foreground")}>Unread</button>
+                    <div className="flex gap-1.5 p-1 bg-muted/40 rounded-2xl border border-muted/10">
+                      <button onClick={() => setActiveTab("all")} className={cn("flex-1 text-[11px] font-bold py-2 rounded-xl transition-all uppercase tracking-widest", activeTab === "all" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>All</button>
+                      <button onClick={() => setActiveTab("unread")} className={cn("flex-1 text-[11px] font-bold py-2 rounded-xl transition-all uppercase tracking-widest", activeTab === "unread" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:text-foreground")}>Unread</button>
                     </div>
                   </div>
-                  <div className="max-h-[360px] overflow-y-auto divide-y divide-muted/10 custom-scrollbar">
+                  <div className="max-h-[360px] overflow-y-auto divide-y divide-muted/10 custom-scrollbar px-2">
                     {filteredNotifications.length === 0 ? (
-                      <div className="py-20 text-center text-muted-foreground text-xs italic opacity-50"><Inbox className="w-8 h-8 mx-auto mb-2" /> Everything Caught Up</div>
+                      <div className="py-20 text-center flex flex-col items-center gap-3 opacity-40 italic">
+                        <Inbox className="w-10 h-10 stroke-[1.5px]" /> 
+                        <p className="text-xs">No notifications yet</p>
+                      </div>
                     ) : (
                       filteredNotifications.map((n: any) => (
-                        <div key={n.id} className={cn("p-4 flex items-center justify-between group transition-all", !n.is_read ? "bg-primary/[0.02]" : "hover:bg-muted/30")}>
+                        <div key={n.id} className={cn("m-1 p-4 flex items-center justify-between rounded-2xl transition-all duration-300", !n.is_read ? "bg-primary/[0.04] shadow-sm" : "hover:bg-muted/30")}>
                           <div className="flex items-center gap-4">
-                            <div className={cn("w-2 h-2 rounded-full", !n.is_read ? "bg-primary animate-pulse" : "bg-muted")} />
+                            <div className={cn("w-2.5 h-2.5 rounded-full ring-4 ring-background", !n.is_read ? "bg-primary shadow-[0_0_10px_rgba(var(--primary),0.5)]" : "bg-muted")} />
                             <div>
-                              <p className={cn("text-xs font-bold tracking-tight", !n.is_read ? "text-foreground" : "text-muted-foreground")}>{n.phone_number}</p>
-                              <p className="text-[9px] text-muted-foreground font-medium uppercase">{new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                              <p className={cn("text-sm font-bold tracking-tight", !n.is_read ? "text-foreground" : "text-muted-foreground")}>{n.phone_number}</p>
+                              <p className="text-[10px] text-muted-foreground font-semibold mt-0.5">{new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                             </div>
                           </div>
-                          {/* THE ACTION BUTTON TO SHOW CONTENT */}
                           <Button 
                             variant="ghost" 
                             size="sm" 
                             onClick={() => { setSelectedLog(n); markAsRead(n.id); }}
-                            className="h-8 w-8 p-0 rounded-lg hover:bg-primary hover:text-white transition-all shadow-none"
+                            className="h-9 w-9 p-0 rounded-xl hover:bg-primary hover:text-white transition-all duration-300 group/btn shadow-none"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-4 h-4 opacity-50 group-hover/btn:opacity-100" />
                           </Button>
                         </div>
                       ))
@@ -250,47 +248,63 @@ export const Header = () => {
           {/* USER PROFILE & SESSION */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-12 gap-3 px-4 border-l border-muted/40 rounded-none group">
+              <Button variant="ghost" className="h-12 gap-4 px-2  rounded-2xl group transition-all duration-300">
                 <div className="relative">
-                  <Avatar className="w-9 h-9 border-2 border-background shadow-md group-hover:rotate-3 transition-transform">
+                  <div className="absolute inset-0 bg-primary/20 rounded-full blur-md  transition-all opacity-0 group-hover:opacity-100" />
+                  <Avatar className="w-10 h-10 border-[3px] border-background shadow-xl  transition-transform duration-500 relative z-10">
                     {user.profile_picture ? (
                       <AvatarImage src={`${API_URL}${user.profile_picture}`} alt={user.name} />
                     ) : (
                       <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">{user.name?.[0]}</AvatarFallback>
                     )}
                   </Avatar>
-                  <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-500 border-2 border-background animate-pulse" />
+                  <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full bg-green-500 border-[3px] border-background z-20" />
                 </div>
                 <div className="text-left hidden lg:block">
-                  <p className="text-sm font-bold truncate w-32 tracking-tight">{user.name}</p>
-                  <p className="text-[10px] text-muted-foreground font-black truncate w-32 uppercase tracking-tighter">{user.email}</p>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <p className="text-[13px] font-bold tracking-tight">{user.name}</p>
+                    {user.role && (
+                      <Badge variant="secondary" className="h-[18px] px-2 text-[9px] uppercase font-black bg-primary/10 text-primary border-none shadow-sm rounded-md">
+                        {user.role}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground font-bold truncate w-32 uppercase tracking-tighter opacity-60 ">{user.email}</p>
                 </div>
               </Button>
             </DropdownMenuTrigger>
             
-            <DropdownMenuContent align="end" className="w-80 p-2 rounded-2xl shadow-2xl mt-2 overflow-hidden border-muted/40">
-              <div className="px-5 py-5 mb-2 rounded-xl bg-muted/40 border border-muted/10 relative overflow-hidden">
-                <div className="flex justify-between items-center mb-4 relative z-10">
-                  <span className="text-[10px] font-black text-muted-foreground uppercase flex items-center gap-2"><Timer className="w-3.5 h-3.5 text-primary" /> Session Status</span>
-                  <Badge className="h-4 px-1.5 text-[9px] bg-green-500 text-white border-none">Online</Badge>
-                </div>
-                <div className="space-y-2 relative z-10">
-                  <div className="flex justify-between text-xs font-bold font-mono">
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Expires In</p>
-                    <p className={cn(progress < 15 && "text-red-500 animate-pulse")}>{timeLeft}</p>
+            <DropdownMenuContent align="end" className="w-[320px] p-2 rounded-[24px] shadow-[0_30px_60px_rgba(0,0,0,0.15)] mt-4 border-muted/30 bg-background/95 backdrop-blur-2xl">
+              <div className="px-5 py-6 mb-2 rounded-[20px] bg-gradient-to-br from-muted/40 to-muted/10 border border-muted/10 relative overflow-hidden group/card">
+                <div className="absolute top-[-20px] right-[-20px] w-24 h-24 bg-primary/5 rounded-full blur-3xl group-hover/card:bg-primary/10 transition-colors" />
+                <div className="flex justify-between items-center mb-6 relative z-10">
+                  <span className="text-[10px] font-black text-muted-foreground uppercase flex items-center gap-2"><Timer className="w-3.5 h-3.5 text-primary" /> Session Duration</span>
+                  <div className="flex gap-1.5">
+                    {user.role && (
+                      <Badge className="h-5 px-2 text-[9px] bg-primary text-white border-none flex gap-1.5 items-center shadow-lg shadow-primary/20">
+                        {isAdmin ? <ShieldCheck className="w-2.5 h-2.5" /> : <UserCircle className="w-2.5 h-2.5" />}
+                        {user.role}
+                      </Badge>
+                    )}
                   </div>
-                  <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                    <div className={cn("h-full transition-all duration-1000", progress < 15 ? "bg-red-500" : "bg-primary")} style={{ width: `${progress}%` }} />
+                </div>
+                <div className="space-y-3 relative z-10">
+                  <div className="flex justify-between text-[11px] font-bold font-mono">
+                    <p className="text-muted-foreground uppercase tracking-widest">Logout in</p>
+                    <p className={cn("tabular-nums", progress < 15 && "text-red-500 animate-pulse")}>{timeLeft}</p>
+                  </div>
+                  <div className="h-2 w-full bg-muted/40 rounded-full overflow-hidden p-[2px]">
+                    <div className={cn("h-full rounded-full transition-all duration-1000", progress < 15 ? "bg-red-500" : "bg-primary")} style={{ width: `${progress}%` }} />
                   </div>
                 </div>
               </div>
 
               <div className="p-1 space-y-1">
-                <Button variant="ghost" onClick={() => navigate(`/users/edit/${user.id}`)} className="w-full justify-start gap-3 h-11 rounded-xl text-sm font-bold hover:text-primary transition-colors">
-                  <Edit className="w-4 h-4 opacity-70" /> Account Settings
+                <Button variant="ghost" onClick={() => navigate(`/users/edit/${user.id}`)} className="w-full justify-start gap-4 h-12 rounded-xl text-sm font-semibold hover:bg-primary/5 hover:text-primary transition-all duration-300">
+                  <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center"><Edit className="w-4 h-4 opacity-70" /></div> Account Settings
                 </Button>
-                <Button variant="ghost" onClick={handleLogout} className="w-full justify-start gap-3 h-11 rounded-xl text-sm font-black text-red-500 hover:bg-red-50 transition-colors uppercase tracking-widest">
-                  <LogOut className="w-4 h-4" /> End Session
+                <Button variant="ghost" onClick={handleLogout} className="w-full justify-start gap-4 h-12 rounded-xl text-sm font-black text-red-500 transition-all duration-300 uppercase tracking-widest">
+                  <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center"><LogOut className="w-4 h-4" /></div> End Session
                 </Button>
               </div>
             </DropdownMenuContent>

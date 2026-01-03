@@ -19,11 +19,11 @@ const Login = () => {
     password: "",
   });
 
-  const API_BASE = "http://localhost:5000";
+const API_URL = import.meta.env.VITE_API_URL;
 
   // Check if user is already logged in on mount
   useEffect(() => {
-    fetch(`${API_BASE}/auth/me`, { credentials: "include" })
+    fetch(`${API_URL}/auth/me`, { credentials: "include" })
       .then(async (res) => {
         if (res.ok) {
           // If the server says we are logged in, go to dashboard
@@ -44,7 +44,7 @@ const Login = () => {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/auth/login`, {
+      const response = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -137,7 +137,7 @@ const Login = () => {
               <div className="flex justify-between items-center">
                 <Label className="text-xs font-bold uppercase text-slate-300 tracking-wider">Secret Password</Label>
                 <Link to="/forgot-password" size="sm" className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors">
-                  Reset?
+                  Fortget Password?
                 </Link>
               </div>
               <div className="relative group">

@@ -27,9 +27,8 @@ interface PolicyFollowUp {
   followup_status: "confirmed" | "pending" | "missed";
 }
 
-const API_FOLLOWUP = "http://localhost:5000/api/followup";
-const API_REMINDER = "http://localhost:5000/api/policies/send-reminder";
-
+const API_FOLLOWUP = `${import.meta.env.VITE_API_URL}/api/followup`;
+const API_REMINDER = `${import.meta.env.VITE_API_URL}/api/policies/send-reminder`;
 export default function FollowUps() {
   const { toast } = useToast();
   const [data, setData] = useState<PolicyFollowUp[]>([]);

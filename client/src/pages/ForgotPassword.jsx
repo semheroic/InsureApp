@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { ShieldCheck, Mail, ArrowLeft, SendHorizontal, LockKeyhole } from "lucide-react";
 import LOGO from "./LOGO.png";
 
-const API_BASE = "http://localhost:5000";
+const API_URL = import.meta.env.VITE_API_URL;
 
 const ForgotPassword = () => {
   const { toast } = useToast();
@@ -28,7 +28,7 @@ const ForgotPassword = () => {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/send-otp`, {
+      const res = await fetch(`${API_URL}/auth/send-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),

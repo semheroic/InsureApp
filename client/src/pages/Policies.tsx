@@ -3,8 +3,9 @@ import axios from "axios";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Download, Edit, Trash2, Eye } from "lucide-react";
+import { Plus, Search, Download, Edit, Trash2, Eye, Calendar as CalendarIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -30,6 +31,12 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -40,8 +47,20 @@ import {
   TableBody,
   TableCell,
 } from "@/components/ui/table";
+import { 
+  format, 
+  isSameDay, 
+  isWithinInterval, 
+  startOfWeek, 
+  endOfWeek, 
+  startOfMonth, 
+  endOfMonth, 
+  parseISO, 
+  startOfDay, 
+  endOfDay 
+} from "date-fns";
+import { DateRange } from "react-day-picker";
 
-// Global config to ensure cookies are sent with every request
 axios.defaults.withCredentials = true;
 
 type Policy = {
@@ -54,12 +73,11 @@ type Policy = {
   contact: string;
   status: "Active" | "Expiring Soon" | "Expired" | "Renewed";
   days_remaining: number;
-  timeToStart?: any;
-  timeToEnd?: any;
 };
 
-const API_URL = "http://localhost:5000/policies";
-const AUTH_URL = "http://localhost:5000/auth/me";
+const BASE = import.meta.env.VITE_API_URL;
+const API_URL = `${BASE}/policies`;
+const AUTH_URL = `${BASE}/auth/me`;
 
 /* ---------------- HELPERS ---------------- */
 const daysBetween = (date: string) => {
@@ -70,9 +88,9 @@ const daysBetween = (date: string) => {
 
 const getStatusBadge = (status: string) => {
   const variants: Record<string, string> = {
-    Active: "bg-success/10 text-success border-success/20",
-    "Expiring Soon": "bg-warning/10 text-warning border-warning/20",
-    Expired: "bg-destructive/10 text-destructive border-destructive/20",
+    Active: "bg-green-100 text-green-700 border-green-200",
+    "Expiring Soon": "bg-yellow-100 text-yellow-700 border-yellow-200",
+    Expired: "bg-red-100 text-red-700 border-red-200",
     Renewed: "bg-blue-100 text-blue-700 border-blue-200",
   };
   return variants[status] || "";
@@ -90,6 +108,12 @@ const Policies = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [companyFilter, setCompanyFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("all");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: undefined,
+    to: undefined,
+  });
+  
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -112,11 +136,9 @@ const Policies = () => {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  // Helper logic for permissions
   const roleClean = userRole?.toLowerCase();
   const isAdmin = roleClean === "admin";
   const isManager = roleClean === "manager";
-  // Allow both Admin and Manager to Add/Edit
   const canModify = isAdmin || isManager;
 
   /* ---------------- AUTH & FETCH ---------------- */
@@ -149,14 +171,44 @@ const Policies = () => {
     checkAuthAndFetch();
   }, []);
 
-  /* ---------------- FILTERS ---------------- */
+  /* ---------------- DYNAMIC COUNTS CALCULATION ---------------- */
+  const counts = useMemo(() => {
+    const today = new Date();
+    return {
+      all: policies.length,
+      active: policies.filter(p => p.status === "Active").length,
+      expiring: policies.filter(p => p.status === "Expiring Soon").length,
+      expired: policies.filter(p => p.status === "Expired").length,
+      renewed: policies.filter(p => p.status === "Renewed").length,
+      soras: policies.filter(p => p.company.toLowerCase() === "soras").length,
+      sonarwa: policies.filter(p => p.company.toLowerCase() === "sonarwa").length,
+      prime: policies.filter(p => p.company.toLowerCase() === "prime").length,
+      radiant: policies.filter(p => p.company.toLowerCase() === "radiant").length,
+      today: policies.filter(p => isSameDay(parseISO(p.start_date), today)).length,
+      weekly: policies.filter(p => isWithinInterval(parseISO(p.start_date), { start: startOfWeek(today), end: endOfWeek(today) })).length,
+      monthly: policies.filter(p => isWithinInterval(parseISO(p.start_date), { start: startOfMonth(today), end: endOfMonth(today) })).length,
+    };
+  }, [policies]);
+
+  /* ---------------- SMART FILTERS ---------------- */
   const filteredPolicies = useMemo(() => {
     return policies.filter((p) => {
-      const matchesSearch =
-        !searchQuery ||
-        p.plate.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.owner.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.company.toLowerCase().includes(searchQuery.toLowerCase());
+      const pDate = parseISO(p.start_date);
+      const today = new Date();
+      const searchLower = searchQuery.toLowerCase().trim();
+
+      let matchesSearch = true;
+      if (dateRange?.from && dateRange?.to) {
+        matchesSearch = isWithinInterval(pDate, { 
+            start: startOfDay(dateRange.from), 
+            end: endOfDay(dateRange.to) 
+        });
+      } else if (searchQuery) {
+        matchesSearch =
+          p.plate.toLowerCase().includes(searchLower) ||
+          p.owner.toLowerCase().includes(searchLower) ||
+          p.company.toLowerCase().includes(searchLower);
+      }
 
       const matchesStatus =
         statusFilter === "all" ||
@@ -165,9 +217,24 @@ const Policies = () => {
       const matchesCompany =
         companyFilter === "all" || p.company.toLowerCase() === companyFilter;
 
-      return matchesSearch && matchesStatus && matchesCompany;
+      let matchesQuickDate = true;
+      if (dateFilter === "today") {
+        matchesQuickDate = isSameDay(pDate, today);
+      } else if (dateFilter === "weekly") {
+        matchesQuickDate = isWithinInterval(pDate, {
+          start: startOfWeek(today),
+          end: endOfWeek(today),
+        });
+      } else if (dateFilter === "monthly") {
+        matchesQuickDate = isWithinInterval(pDate, {
+          start: startOfMonth(today),
+          end: endOfMonth(today),
+        });
+      }
+
+      return matchesSearch && matchesStatus && matchesCompany && matchesQuickDate;
     });
-  }, [policies, searchQuery, statusFilter, companyFilter]);
+  }, [policies, searchQuery, statusFilter, companyFilter, dateFilter, dateRange]);
 
   const paginatedPolicies = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -192,7 +259,7 @@ const Policies = () => {
           days: p.days_remaining
         }))
       };
-      const { data } = await axios.post("http://localhost:5000/api/policies/broadcast", payload);
+      const { data } = await axios.post(`${BASE}/policies/broadcast`, payload);
       toast({ title: "Broadcast Complete", description: `Sent ${data.summary.successful} messages.` });
       setIsMessageDialogOpen(false);
       setBulkMessage("");
@@ -264,7 +331,7 @@ const Policies = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "policies.csv";
+    a.download = `policies_export_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
   };
 
@@ -273,70 +340,118 @@ const Policies = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-  <div>
-    <h1 className="text-3xl font-bold">Insurance Policies</h1>
-    <p className="text-muted-foreground">Manage all vehicle insurance policies</p>
-  </div>
-  <div className="flex gap-2">
-    {/* New Export Button */}
-    <Button 
-      variant="outline" 
-      className="gap-2" 
-      onClick={exportToCSV}
-    >
-      <Download className="w-4 h-4" /> Export CSV
-    </Button>
-
-    {isAdmin && (
-      <Button variant="outline" className="gap-2" onClick={() => setIsMessageDialogOpen(true)}>
-        <Search className="w-4 h-4" /> Broadcast SMS
-      </Button>
-    )}
-    
-    {/* Allow Admin OR Manager to Add */}
-    {canModify && (
-      <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}>
-        <Plus className="w-4 h-4" /> Add Policy
-      </Button>
-    )}
-  </div>
-</div>
+        <div>
+          <h1 className="text-3xl font-bold">Insurance Policies</h1>
+          <p className="text-muted-foreground">Manage and track vehicle insurance coverage</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" className="gap-2" onClick={exportToCSV}>
+            <Download className="w-4 h-4" /> Export CSV
+          </Button>
+          {isAdmin && (
+            <Button variant="outline" className="gap-2" onClick={() => setIsMessageDialogOpen(true)}>
+              <Search className="w-4 h-4" /> Broadcast SMS
+            </Button>
+          )}
+          {canModify && (
+            <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}>
+              <Plus className="w-4 h-4" /> Add Policy
+            </Button>
+          )}
+        </div>
+      </div>
 
       <Card className="p-6">
-        <div className="flex gap-4 mb-6 items-center">
-          <div className="flex-1 relative">
+        <div className="flex flex-wrap gap-4 mb-6 items-center">
+          <div className="flex-1 min-w-[200px] relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search..."
+              placeholder="Search plate or owner..."
               className="pl-10"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
 
+          <div className="grid gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={"outline"}
+                  className={cn(
+                    "w-[280px] justify-start text-left font-normal",
+                    !dateRange?.from && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {dateRange?.from ? (
+                    dateRange.to ? (
+                      <>{format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}</>
+                    ) : (
+                      format(dateRange.from, "LLL dd, y")
+                    )
+                  ) : (
+                    <span>Filter by Date Range</span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  initialFocus
+                  mode="range"
+                  defaultMonth={dateRange?.from}
+                  selected={dateRange}
+                  onSelect={setDateRange}
+                  numberOfMonths={2}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <Select value={dateFilter} onValueChange={setDateFilter}>
+            <SelectTrigger className="w-[180px]">
+                <CalendarIcon className="w-4 h-4 mr-2 opacity-50" />
+                <SelectValue placeholder="Registration" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Time ({counts.all})</SelectItem>
+              <SelectItem value="today">Today ({counts.today})</SelectItem>
+              <SelectItem value="weekly">Latest Week ({counts.weekly})</SelectItem>
+              <SelectItem value="monthly">Latest Month ({counts.monthly})</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="expiringsoon">Expiring Soon</SelectItem>
-              <SelectItem value="expired">Expired</SelectItem>
-              <SelectItem value="renewed">Renewed</SelectItem>
+              <SelectItem value="all">All Status ({counts.all})</SelectItem>
+              <SelectItem value="active">Active ({counts.active})</SelectItem>
+              <SelectItem value="expiringsoon">Expiring Soon ({counts.expiring})</SelectItem>
+              <SelectItem value="expired">Expired ({counts.expired})</SelectItem>
+              <SelectItem value="renewed">Renewed ({counts.renewed})</SelectItem>
             </SelectContent>
           </Select>
 
           <Select value={companyFilter} onValueChange={setCompanyFilter}>
             <SelectTrigger className="w-[180px]"><SelectValue placeholder="Company" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Companies</SelectItem>
-              <SelectItem value="soras">SORAS</SelectItem>
-              <SelectItem value="sonarwa">SONARWA</SelectItem>
-              <SelectItem value="prime">PRIME</SelectItem>
-              <SelectItem value="radiant">RADIANT</SelectItem>
+              <SelectItem value="all">All Companies ({counts.all})</SelectItem>
+              <SelectItem value="soras">SORAS ({counts.soras})</SelectItem>
+              <SelectItem value="sonarwa">SONARWA ({counts.sonarwa})</SelectItem>
+              <SelectItem value="prime">PRIME ({counts.prime})</SelectItem>
+              <SelectItem value="radiant">RADIANT ({counts.radiant})</SelectItem>
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="icon" onClick={exportToCSV}><Download className="w-4 h-4" /></Button>
+          <Button variant="outline" size="icon" title="Reset Filters" onClick={() => {
+              setSearchQuery("");
+              setStatusFilter("all");
+              setCompanyFilter("all");
+              setDateFilter("all");
+              setDateRange({ from: undefined, to: undefined });
+          }}>
+            <Trash2 className="w-4 h-4" />
+          </Button>
         </div>
 
         <div className="overflow-hidden rounded-lg border border-border">
@@ -356,7 +471,7 @@ const Policies = () => {
             <TableBody>
               {paginatedPolicies.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No policies found</TableCell>
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No records found matching filters</TableCell>
                 </TableRow>
               ) : paginatedPolicies.map((policy) => (
                 <TableRow key={policy.id}>
@@ -374,7 +489,6 @@ const Policies = () => {
                       <Eye className="w-4 h-4" />
                     </Button>
                     
-                    {/* Allow Admin OR Manager to Edit */}
                     {canModify && (
                       <Button variant="ghost" size="icon" onClick={() => {
                         setSelectedPolicy(policy);
@@ -392,7 +506,6 @@ const Policies = () => {
                       </Button>
                     )}
 
-                    {/* ONLY Admin can Delete */}
                     {isAdmin && (
                       <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { setSelectedPolicy(policy); setIsDeleteDialogOpen(true); }}>
                         <Trash2 className="w-4 h-4" />
@@ -406,12 +519,11 @@ const Policies = () => {
         </div>
       </Card>
 
-      {/* ===== VIEW DIALOG ===== */}
+      {/* VIEW DIALOG - RESTORED FULL FIELDS */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Policy Details</DialogTitle>
-            <DialogDescription>Full technical details for this policy.</DialogDescription>
           </DialogHeader>
           {selectedPolicy && (
             <div className="grid gap-4 py-4">
@@ -445,7 +557,7 @@ const Policies = () => {
                   <div className="flex items-center gap-3 mt-1">
                     <Badge className={getStatusBadge(selectedPolicy.status)}>{selectedPolicy.status}</Badge>
                     <span className="text-sm font-semibold">
-                       {selectedPolicy.days_remaining > 0 ? `${selectedPolicy.days_remaining} days until expiration` : "Policy Expired"}
+                       {selectedPolicy.days_remaining > 0 ? `${selectedPolicy.days_remaining} days remaining` : "Policy Expired"}
                     </span>
                   </div>
                 </div>
@@ -453,29 +565,28 @@ const Policies = () => {
             </div>
           )}
           <DialogFooter>
-            <Button onClick={() => setIsViewDialogOpen(false)}>Close Window</Button>
+            <Button onClick={() => setIsViewDialogOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ===== ADD DIALOG ===== */}
+      {/* ADD DIALOG - RESTORED FULL FIELDS */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add New Policy</DialogTitle>
-            <DialogDescription>Enter the details for the new insurance policy.</DialogDescription>
+            <DialogTitle>Add Policy</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="plate">Plate Number</Label>
-              <Input id="plate" placeholder="e.g. RAE 123A" value={formData.plate} onChange={(e) => setFormData({ ...formData, plate: e.target.value })} />
+              <Input id="plate" placeholder="RAE 123A" value={formData.plate} onChange={(e) => setFormData({ ...formData, plate: e.target.value })} />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="owner">Owner Name</Label>
-              <Input id="owner" placeholder="Full Name" value={formData.owner} onChange={(e) => setFormData({ ...formData, owner: e.target.value })} />
+              <Label htmlFor="owner">Owner</Label>
+              <Input id="owner" value={formData.owner} onChange={(e) => setFormData({ ...formData, owner: e.target.value })} />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="company">Insurance Company</Label>
+              <Label htmlFor="company">Company</Label>
               <Select value={formData.company} onValueChange={(value) => setFormData({ ...formData, company: value })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -488,45 +599,44 @@ const Policies = () => {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="startDate">Start Date</Label>
-                <Input id="startDate" type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
+                <Label>Start Date</Label>
+                <Input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="expiryDate">Expiry Date</Label>
-                <Input id="expiryDate" type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} />
+                <Label>Expiry Date</Label>
+                <Input type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} />
               </div>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="contact">Contact Number</Label>
-              <Input id="contact" placeholder="078..." value={formData.contact} onChange={(e) => setFormData({ ...formData, contact: e.target.value })} />
+              <Label>Contact</Label>
+              <Input placeholder="078..." value={formData.contact} onChange={(e) => setFormData({ ...formData, contact: e.target.value })} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Save Policy</Button>
+            <Button onClick={handleAdd}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ===== EDIT DIALOG ===== */}
+      {/* EDIT DIALOG - RESTORED FULL FIELDS */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Policy</DialogTitle>
-            <DialogDescription>Update the existing policy details.</DialogDescription>
           </DialogHeader>
           {selectedPolicy && (
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="edit-plate">Plate Number</Label>
-                <Input id="edit-plate" value={formData.plate} onChange={(e) => setFormData({ ...formData, plate: e.target.value })} />
+                <Label>Plate Number</Label>
+                <Input value={formData.plate} onChange={(e) => setFormData({ ...formData, plate: e.target.value })} />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="edit-owner">Owner Name</Label>
-                <Input id="edit-owner" value={formData.owner} onChange={(e) => setFormData({ ...formData, owner: e.target.value })} />
+                <Label>Owner</Label>
+                <Input value={formData.owner} onChange={(e) => setFormData({ ...formData, owner: e.target.value })} />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="edit-company">Insurance Company</Label>
+                <Label>Company</Label>
                 <Select value={formData.company} onValueChange={(value) => setFormData({ ...formData, company: value })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -539,93 +649,82 @@ const Policies = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="edit-startDate">Start Date</Label>
-                  <Input id="edit-startDate" type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
+                  <Label>Start Date</Label>
+                  <Input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="edit-expiryDate">Expiry Date</Label>
-                  <Input id="edit-expiryDate" type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} />
+                  <Label>Expiry Date</Label>
+                  <Input type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} />
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="edit-contact">Contact Number</Label>
-                <Input id="edit-contact" value={formData.contact} onChange={(e) => setFormData({ ...formData, contact: e.target.value })} />
+                <Label>Contact</Label>
+                <Input value={formData.contact} onChange={(e) => setFormData({ ...formData, contact: e.target.value })} />
               </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleEdit}>Update Policy</Button>
+            <Button onClick={handleEdit}>Update</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ===== DELETE DIALOG ===== */}
+      {/* DELETE ALERT */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the policy for <strong>{selectedPolicy?.plate}</strong>. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete Forever
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+  <AlertDialogContent className="max-w-[400px]">
+    <AlertDialogHeader className="flex flex-col items-center text-center">
+      {/* Warning Icon Circle */}
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 mb-4">
+        <Trash2 className="h-6 w-6 text-red-600" />
+      </div>
+      
+      <AlertDialogTitle className="text-xl font-bold text-slate-900">
+        Confirm Deletion
+      </AlertDialogTitle>
+      
+      <AlertDialogDescription className="text-slate-500 mt-2">
+        This action cannot be undone. You are about to permanently remove the policy for 
+        <span className="block mt-1 font-bold text-slate-900">
+          Plate: {selectedPolicy?.plate}
+        </span>
+      </AlertDialogDescription>
+    </AlertDialogHeader>
 
-      {/* ===== BROADCAST DIALOG ===== */}
+    <AlertDialogFooter className="mt-6 flex gap-2 sm:justify-center">
+      <AlertDialogCancel className="flex-1 border-slate-200 text-slate-600 hover:bg-slate-50">
+        No, Keep it
+      </AlertDialogCancel>
+      <AlertDialogAction 
+        onClick={handleDelete} 
+        className="flex-1 bg-red-600 text-white hover:bg-red-700 focus:ring-red-600 shadow-sm"
+      >
+        Yes, Delete
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
+      {/* BROADCAST DIALOG */}
       <Dialog open={isMessageDialogOpen} onOpenChange={setIsMessageDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-primary/10 rounded-full">
-                <Search className="w-5 h-5 text-primary" />
-              </div>
-              <DialogTitle className="text-xl">Broadcast SMS</DialogTitle>
-            </div>
-            <DialogDescription className="pt-2">
-              Sending to <span className="font-bold text-foreground">{filteredPolicies.length} recipients</span>.
-            </DialogDescription>
+            <DialogTitle>Broadcast SMS</DialogTitle>
           </DialogHeader>
-
           <div className="space-y-4 py-4">
-            <div className="bg-muted/50 p-3 rounded-lg border border-border">
-              <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">Personalization Tags</Label>
-              <div className="flex gap-2 mt-2">
-                {['{owner}', '{plate}', '{days}'].map(tag => (
-                  <code key={tag} className="px-1.5 py-0.5 rounded bg-background border text-xs font-mono text-primary">
-                    {tag}
-                  </code>
-                ))}
-              </div>
+            <div className="bg-muted p-2 rounded text-xs font-mono text-primary">
+              Use tags: {'{owner}'}, {'{plate}'}, {'{days}'}
             </div>
-
-            <div className="grid gap-2">
-              <div className="flex justify-between items-center">
-                <Label htmlFor="message">Message Content</Label>
-                <span className={`text-[10px] font-medium ${bulkMessage.length > 160 ? 'text-warning' : 'text-muted-foreground'}`}>
-                  {bulkMessage.length} / 160 chars
-                </span>
-              </div>
-              <textarea
-                id="message"
-                className="flex min-h-[150px] w-full rounded-xl border border-input bg-background px-4 py-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all resize-none"
-                placeholder="e.g. Dear {owner}, your insurance for {plate} expires in {days} days."
-                value={bulkMessage}
-                onChange={(e) => setBulkMessage(e.target.value)}
-              />
-            </div>
+            <textarea
+              className="w-full min-h-[150px] rounded border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="Enter message..."
+              value={bulkMessage}
+              onChange={(e) => setBulkMessage(e.target.value)}
+            />
           </div>
-
           <DialogFooter>
             <Button variant="ghost" onClick={() => setIsMessageDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSendMessage} disabled={isSending || !bulkMessage.trim()}>
-              {isSending ? "Sending..." : "Send Broadcast"}
+              {isSending ? "Sending..." : "Send"}
             </Button>
           </DialogFooter>
         </DialogContent>

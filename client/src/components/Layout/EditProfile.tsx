@@ -14,7 +14,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
-const API_URL = "http://localhost:5000";
+const API_URL = import.meta.env.VITE_API_URL;
 
 type User = {
   id: number;

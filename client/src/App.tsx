@@ -19,14 +19,20 @@ import { EditProfile } from "./components/Layout/EditProfile";
 import PolicyHistoryTracker from "./pages/PolicyHistory";
 
 const queryClient = new QueryClient();
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      {/* Updated with Future Flags to silence v7 migration warnings */}
+      <BrowserRouter 
+        future={{ 
+          v7_startTransition: true, 
+          v7_relativeSplatPath: true 
+        }}
+      >
         <Routes>
-          
           <Route path="/dashboard" element={<MainLayout><Dashboard /></MainLayout>} />
           <Route path="/" element={<Login/>} />
           <Route path="/signup" element={<AddUser/>} />
@@ -46,4 +52,5 @@ const App = () => (
     </TooltipProvider>
   </QueryClientProvider>
 );
+
 export default App;

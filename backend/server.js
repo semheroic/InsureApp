@@ -25,16 +25,16 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 // ======================== MIDDLEWARE ========================
-app.use(cors({ origin: "http://localhost:8081", credentials: true }));
+app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // ======================== DATABASE ========================
 const db = mysql.createPool({
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASS || "",
-  database: process.env.DB_NAME || "InsureApp",
+  host: process.env.DB_HOST ,
+  user: process.env.DB_USER ,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME ,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -354,7 +354,7 @@ app.get("/users/:id", async (req, res) => {
 });
 
 // ---------------- CREATE USER ----------------
-app.post("/users", isAdmin, upload.single("profile_picture"), async (req, res) => {
+app.post("/users", upload.single("profile_picture"), async (req, res) => {
   try {
     const { name, email, phone, password, role } = req.body;
     const finalRole = role || "User"; // Define the role once to use in DB and Email

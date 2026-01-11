@@ -30,10 +30,17 @@ app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // ======================== DATABASE ========================
-const db = mysql.createPool({
-  // Use MYSQL_URL if available (Railway default), otherwise build from separate vars
-  host: process.env.MYSQLHOST || process.env.DB_HOST, 
-  port: process.env.MYSQLPORT || process.env.DB_PORT || 25758,
+
+// ======================== DATABASE ========================
+const dbConfig = {
+  // Priority 1: Railway's automatic MYSQL_URL (most reliable)
+  // Priority 2: Your custom DB_HOST/MYSQLHOST
+  host: process.env.MYSQLHOST || process.env.DB_HOST || 'localhost',
+  
+  // INTERNAL Railway port is ALWAYS 3306. 
+  // Only use 25758 if you are connecting from your laptop.
+  port: process.env.MYSQLPORT || (process.env.RAILWAY_ENVIRONMENT ? 3306 : 25758),
+  
   user: process.env.MYSQLUSER || process.env.DB_USER,
   password: process.env.MYSQLPASSWORD || process.env.DB_PASS,
   database: process.env.MYSQLDATABASE || process.env.DB_NAME,
@@ -43,11 +50,13 @@ const db = mysql.createPool({
   queueLimit: 0,
   multipleStatements: true,
   
-  // This ensures SSL is only used when connecting from your laptop
-  // Internal Railway connections usually don't need it
-  ssl: process.env.DB_HOST ? { rejectUnauthorized: false } : false, 
+  // Railway internal connections MUST NOT use SSL usually.
+  // We only enable SSL if we are NOT on Railway (local dev connecting to cloud).
+  ssl: process.env.RAILWAY_ENVIRONMENT ? false : { rejectUnauthorized: false }, 
   connectTimeout: 30000 
-});
+};
+
+const db = mysql.createPool(dbConfig);
 const query = util.promisify(db.query).bind(db);
 
 // ======================== SESSION ========================

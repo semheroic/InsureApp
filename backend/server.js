@@ -67,14 +67,17 @@ const sessionStore = new MySQLStore(
   db
 );
 
-
 app.use(session({
   key: "insureapp_session",
   secret: process.env.SESSION_SECRET || "supersecretkey",
   store: sessionStore,
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 1000 * 60 * 60 * 8, httpOnly: true, secure: false }
+  cookie: { 
+    maxAge: 1000, // 1 second
+    httpOnly: true,
+    secure: false 
+  }
 }));
 
 // ======================== EMAIL ========================

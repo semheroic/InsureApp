@@ -61,8 +61,8 @@ console.log("DB MODE:", isProduction ? "Railway" : "Local");
 const sessionStore = new MySQLStore(
   {
     clearExpired: true,
-    checkExpirationInterval: 1000, // check every 1 second
-    expiration: 1000 // sessions expire after 1 second
+    checkExpirationInterval: 15 * 60 * 1000, // 15 minutes
+    expiration: 8 * 60 * 60 * 1000 // 8 hours
   },
   db
 );
@@ -74,7 +74,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    maxAge: 1000, // 1 second
+    maxAge: 1000 * 60 * 60 * 8, // 8 hours
     httpOnly: true,
     secure: false 
   }

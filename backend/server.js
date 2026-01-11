@@ -78,11 +78,31 @@ const transporter = nodemailer.createTransport({
 });
 
 // ======================== AFRICA'S TALKING ========================
-const africastalking = Africastalking({
-  apiKey: process.env.AT_API_KEY,
-  username: process.env.AT_USERNAME
-});
-const sms = africastalking.SMS;
+// 1. Declare the variable at the top level
+let africasTalking;
+let sms;
+
+const atCredentials = {
+    apiKey: process.env.AT_API_KEY,
+    username: process.env.AT_USERNAME,
+};
+
+// 2. Initialize ONLY if credentials exist
+if (atCredentials.apiKey && atCredentials.username) {
+    africasTalking = Africastalking(atCredentials);
+    sms = africasTalking.SMS; // Access the SMS service here
+    console.log("✅ AfricasTalking initialized successfully.");
+} else {
+    // This prevents the app from crashing even if variables are missing
+    console.warn("⚠️ AfricasTalking credentials missing. SMS features will be disabled.");
+    
+    // Create a "fake" sms object so your code doesn't break when it tries to call it
+    sms = {
+        send: () => console.error("❌ SMS not sent: AfricasTalking is not configured.")
+    };
+}
+
+// Now 'sms' is safe to use anywhere in your file!
 
 // ======================== HELPERS ========================
 const formatRwandaNumber = number => {

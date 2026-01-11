@@ -163,13 +163,7 @@ const Dashboard = () => {
         </div>
 
         <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-          <Button 
-            onClick={exportToCSV}
-            className="h-12 px-6 rounded-2xl bg-white dark:bg-slate-900 border-none ring-1 ring-slate-200 dark:ring-slate-800 text-slate-900 dark:text-white hover:bg-slate-50 shadow-sm gap-2 font-bold text-xs uppercase tracking-widest transition-all"
-          >
-            <Download className="w-4 h-4 text-blue-600" strokeWidth={2.5} />
-            Export Intelligence
-          </Button>
+         
         </motion.div>
       </motion.div>
 

@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const mysql = require("mysql");
+const mysql = require("mysql2");
 const bcrypt = require("bcrypt");
 const bodyParser = require("body-parser");
 const session = require("express-session");
@@ -31,14 +31,22 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // ======================== DATABASE ========================
 const db = mysql.createPool({
-  host: process.env.DB_HOST ,
-  user: process.env.DB_USER ,
-  password: process.env.DB_PASS,
-  database: process.env.DB_NAME ,
+  // Use MYSQL_URL if available (Railway default), otherwise build from separate vars
+  host: process.env.MYSQLHOST || process.env.DB_HOST, 
+  port: process.env.MYSQLPORT || process.env.DB_PORT || 25758,
+  user: process.env.MYSQLUSER || process.env.DB_USER,
+  password: process.env.MYSQLPASSWORD || process.env.DB_PASS,
+  database: process.env.MYSQLDATABASE || process.env.DB_NAME,
+  
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
   multipleStatements: true,
+  
+  // This ensures SSL is only used when connecting from your laptop
+  // Internal Railway connections usually don't need it
+  ssl: process.env.DB_HOST ? { rejectUnauthorized: false } : false, 
+  connectTimeout: 30000 
 });
 const query = util.promisify(db.query).bind(db);
 

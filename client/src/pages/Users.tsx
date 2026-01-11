@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { UserPlus, Search, Mail, Phone, Edit, Trash2, Eye, Download, Loader2 } from "lucide-react";
+import { UserPlus, Search, Mail, Phone, Edit, Trash2, Eye, Download, Loader2, AlertCircle, Calendar, Key, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Table,
   TableBody,
@@ -52,16 +53,16 @@ type User = {
   profile_picture?: string;
   initials: string;
   joinDate: string;
+  created_at: string; 
 };
 
-// --- API CONFIGURATION ---
-const BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
+const BASE = import.meta.env.VITE_API_URL;
 const API_URL = `${BASE}/users`;
 
 const Users = () => {
   const { toast } = useToast();
 
-  // --- State Management ---
+  // --- State ---
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<{ id: number; role: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,6 +71,7 @@ const Users = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [timeFilter, setTimeFilter] = useState("all");
 
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({
@@ -87,11 +89,10 @@ const Users = () => {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  /** ==================== AUTH & DATA FETCH ==================== */
+  // --- Fetch Logic ---
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // Get current logged in user role
       const meRes = await fetch(`${BASE}/auth/me`, { credentials: "include" });
       if (meRes.ok) {
         const meData = await meRes.json();
@@ -101,7 +102,6 @@ const Users = () => {
         });
       }
 
-      // Get user list
       const res = await fetch(API_URL, { credentials: "include" });
       if (!res.ok) throw new Error("Unauthorized");
 
@@ -110,11 +110,11 @@ const Users = () => {
         ...u,
         initials: u.name ? u.name.split(" ").map((n: string) => n[0]).join("").toUpperCase() : "??",
         joinDate: u.joined_date || u.created_at || "N/A",
+        created_at: u.created_at || new Date().toISOString(),
         profile_picture: u.profile_picture ? (u.profile_picture.startsWith('http') ? u.profile_picture : `${BASE}${u.profile_picture}`) : undefined,
       }));
       setUsers(formatted);
     } catch (err) {
-      console.error("Fetch error:", err);
       toast({ title: "Error", description: "Failed to load users.", variant: "destructive" });
     } finally {
       setLoading(false);
@@ -125,62 +125,35 @@ const Users = () => {
 
   const isAdmin = currentUser?.role === "admin";
 
-  /** ==================== API ACTIONS ==================== */
-  const handleAdd = async () => {
-    if (!isAdmin) return;
-    setIsProcessing(true);
-    try {
-      const form = new FormData();
-      Object.entries(formData).forEach(([key, value]) => {
-        if (value !== null && value !== "") form.append(key, value);
-      });
-
-      const res = await fetch(API_URL, { method: "POST", body: form, credentials: "include" });
-      if (!res.ok) throw new Error("Server error");
+  // --- Helpers ---
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => {
+      const matchesSearch = u.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                           u.email.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesRole = roleFilter === "all" || u.role.toLowerCase() === roleFilter;
+      const matchesStatus = statusFilter === "all" || u.status.toLowerCase() === statusFilter;
       
-      await fetchData();
-      setIsAddDialogOpen(false);
-      setFormData({ name: "", email: "", phone: "", password: "", role: "User", status: "Active", profile_picture: null });
-      toast({ title: "Success", description: "User created successfully." });
-    } catch (err) {
-      toast({ title: "Action Failed", description: "Could not add user.", variant: "destructive" });
-    } finally { setIsProcessing(false); }
-  };
-
-  const handleEdit = async () => {
-    if (!isAdmin || !selectedUser) return;
-    setIsProcessing(true);
-    try {
-      const form = new FormData();
-      Object.entries(formData).forEach(([key, value]) => {
-        if (value !== null && value !== "") form.append(key, value);
-      });
-
-      const res = await fetch(`${API_URL}/${selectedUser.id}`, { method: "PUT", body: form, credentials: "include" });
-      if (!res.ok) throw new Error("Update failed");
+      const createdDate = new Date(u.created_at);
+      const now = new Date();
+      let matchesTime = true;
       
-      await fetchData();
-      setIsEditDialogOpen(false);
-      toast({ title: "Updated", description: "User details saved." });
-    } catch (err) {
-      toast({ title: "Update Failed", description: "Check permissions.", variant: "destructive" });
-    } finally { setIsProcessing(false); }
-  };
+      if (timeFilter === "today") matchesTime = createdDate.toDateString() === now.toDateString();
+      else if (timeFilter === "week") {
+        const weekAgo = new Date(); weekAgo.setDate(now.getDate() - 7);
+        matchesTime = createdDate >= weekAgo;
+      } else if (timeFilter === "month") {
+        const monthAgo = new Date(); monthAgo.setMonth(now.getMonth() - 1);
+        matchesTime = createdDate >= monthAgo;
+      }
+      return matchesSearch && matchesRole && matchesStatus && matchesTime;
+    });
+  }, [users, searchQuery, roleFilter, statusFilter, timeFilter]);
 
-  const handleDelete = async () => {
-    if (!isAdmin || !selectedUser) return;
-    try {
-      const res = await fetch(`${API_URL}/${selectedUser.id}`, { method: "DELETE", credentials: "include" });
-      if (!res.ok) throw new Error("Delete failed");
-      await fetchData();
-      setIsDeleteDialogOpen(false);
-      toast({ title: "Deleted", description: "User removed from system." });
-    } catch (err) {
-      toast({ title: "Delete Failed", description: "Action unauthorized.", variant: "destructive" });
-    }
-  };
+  const recentRegistrations = useMemo(() => {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    return users.filter(u => new Date(u.created_at) >= twentyFourHoursAgo);
+  }, [users]);
 
-  /** ==================== HELPERS ==================== */
   const getRoleBadge = (role: string) => {
     const r = role.toLowerCase();
     if (r === "admin") return "bg-destructive/10 text-destructive border-destructive/20";
@@ -193,90 +166,124 @@ const Users = () => {
       ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" 
       : "bg-muted text-muted-foreground border-border";
 
-  const filteredUsers = useMemo(() => {
-    return users.filter(u => {
-      const matchesSearch = u.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           u.email.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesRole = roleFilter === "all" || u.role.toLowerCase() === roleFilter;
-      const matchesStatus = statusFilter === "all" || u.status.toLowerCase() === statusFilter;
-      return matchesSearch && matchesRole && matchesStatus;
-    });
-  }, [users, searchQuery, roleFilter, statusFilter]);
-
-  const exportToCSV = () => {
-    if (!isAdmin || filteredUsers.length === 0) return;
-    const headers = ["Name", "Email", "Phone", "Role", "Status", "Joined"];
-    const rows = filteredUsers.map(u => [u.name, u.email, u.phone, u.role, u.status, u.joinDate]);
-    const csvContent = [headers.join(","), ...rows.map(r => r.map(c => `"${c}"`).join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `users_export_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
+  // --- Action Handlers ---
+  const handleAdd = async () => {
+    if (!isAdmin) return;
+    setIsProcessing(true);
+    try {
+      const form = new FormData();
+      Object.entries(formData).forEach(([key, value]) => {
+        if (value !== null && value !== "") form.append(key, value as any);
+      });
+      const res = await fetch(API_URL, { method: "POST", body: form, credentials: "include" });
+      if (!res.ok) throw new Error();
+      await fetchData();
+      setIsAddDialogOpen(false);
+      setFormData({ name: "", email: "", phone: "", password: "", role: "User", status: "Active", profile_picture: null });
+      toast({ title: "Success", description: "User created." });
+    } catch { toast({ title: "Failed", description: "Error creating user.", variant: "destructive" }); }
+    finally { setIsProcessing(false); }
   };
 
-  if (loading) return <div className="p-20 text-center text-muted-foreground flex flex-col items-center gap-4">
-    <Loader2 className="animate-spin h-8 w-8 text-primary" />
-    <p>Syncing user directory...</p>
-  </div>;
+  const handleEdit = async () => {
+    if (!isAdmin || !selectedUser) return;
+    setIsProcessing(true);
+    try {
+      const form = new FormData();
+      Object.entries(formData).forEach(([key, value]) => {
+        // Only append password if it was actually modified
+        if (key === "password" && value === "") return;
+        if (value !== null) form.append(key, value as any);
+      });
+      const res = await fetch(`${API_URL}/${selectedUser.id}`, { method: "PUT", body: form, credentials: "include" });
+      if (!res.ok) throw new Error();
+      await fetchData();
+      setIsEditDialogOpen(false);
+      toast({ title: "Updated", description: "User details and security saved." });
+    } catch { toast({ title: "Error", description: "Update failed.", variant: "destructive" }); }
+    finally { setIsProcessing(false); }
+  };
+
+  const handleDelete = async () => {
+    if (!isAdmin || !selectedUser) return;
+    try {
+      const res = await fetch(`${API_URL}/${selectedUser.id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error();
+      await fetchData();
+      setIsDeleteDialogOpen(false);
+      toast({ title: "Deleted", description: "User removed." });
+    } catch { toast({ title: "Error", variant: "destructive" }); }
+  };
+
+  if (loading) return <div className="p-20 text-center text-muted-foreground flex flex-col items-center gap-4"><Loader2 className="animate-spin h-8 w-8 text-primary" /><p>Syncing user directory...</p></div>;
 
   return (
     <div className="space-y-6">
-      {/* Header Section */}
+      {/* Notifications */}
+      {isAdmin && recentRegistrations.length > 0 && (
+        <Alert className="border-blue-500/50 bg-blue-500/5">
+          <AlertCircle className="h-4 w-4 text-blue-500" />
+          <AlertTitle className="text-blue-500 font-bold">New Registrations</AlertTitle>
+          <AlertDescription className="text-xs">{recentRegistrations.length} users joined in the last 24 hours.</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Users</h1>
-          <p className="text-muted-foreground text-sm">Manage system access levels and profiles</p>
+          <p className="text-muted-foreground text-sm flex items-center gap-2">
+            Manage system access 
+            {isAdmin && <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">{users.length} Total</span>}
+          </p>
         </div>
         <div className="flex gap-2">
           {isAdmin && (
             <>
-              <Button variant="outline" className="gap-2" onClick={exportToCSV}>
-                <Download className="w-4 h-4" /> Export CSV
-              </Button>
-              <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}>
-                <UserPlus className="w-4 h-4" /> Add User
-              </Button>
+              <Button variant="outline" className="gap-2" onClick={() => {
+                const headers = ["Name", "Email", "Role", "Status"];
+                const csv = [headers.join(","), ...filteredUsers.map(u => [u.name, u.email, u.role, u.status].join(","))].join("\n");
+                const blob = new Blob([csv], { type: "text/csv" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob); a.download = "users.csv"; a.click();
+              }}><Download className="w-4 h-4" /> Export CSV</Button>
+              <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}><UserPlus className="w-4 h-4" /> Add User</Button>
             </>
           )}
         </div>
       </div>
 
-      {/* Filter Section */}
       <Card className="p-6">
+        {/* Filters */}
         <div className="flex flex-col md:flex-row items-center gap-4 mb-6">
           <div className="flex-1 w-full relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input 
-              placeholder="Search name or email..." 
-              className="pl-10" 
-              value={searchQuery} 
-              onChange={e => setSearchQuery(e.target.value)} 
-            />
+            <Input placeholder="Search name or email..." className="pl-10" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
           </div>
-          <div className="flex gap-2 w-full md:w-auto">
+          <div className="flex flex-wrap gap-2 w-full md:w-auto">
             <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger className="w-full md:w-[160px]"><SelectValue placeholder="Role" /></SelectTrigger>
+              <SelectTrigger className="w-full md:w-[140px]"><SelectValue placeholder="Role" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Roles</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="admin">Admin ({users.filter(u=>u.role.toLowerCase()==='admin').length})</SelectItem>
                 <SelectItem value="manager">Manager</SelectItem>
                 <SelectItem value="user">User</SelectItem>
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full md:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-              </SelectContent>
+              <SelectTrigger className="w-full md:w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent>
             </Select>
+            {isAdmin && (
+              <Select value={timeFilter} onValueChange={setTimeFilter}>
+                <SelectTrigger className="w-full md:w-[140px]"><Calendar className="w-3 h-3 mr-2" /><SelectValue placeholder="Time Joined" /></SelectTrigger>
+                <SelectContent><SelectItem value="all">Any Time</SelectItem><SelectItem value="today">Today</SelectItem><SelectItem value="week">This Week</SelectItem><SelectItem value="month">This Month</SelectItem></SelectContent>
+              </Select>
+            )}
           </div>
         </div>
 
-        {/* Table Section */}
+        {/* Table */}
         <div className="rounded-xl border border-border overflow-hidden">
           <Table>
             <TableHeader className="bg-muted/50">
@@ -296,40 +303,38 @@ const Users = () => {
                   <TableRow key={user.id} className={cn(isMe && "bg-primary/[0.02]")}>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <Avatar className="w-10 h-10 border shadow-sm">
-                          <AvatarImage src={user.profile_picture} />
-                          <AvatarFallback>{user.initials}</AvatarFallback>
-                        </Avatar>
+                        <div className="relative">
+                          <Avatar className="w-10 h-10 border shadow-sm">
+                            <AvatarImage src={user.profile_picture} />
+                            <AvatarFallback>{user.initials}</AvatarFallback>
+                          </Avatar>
+                          {isMe && (
+                             <span className={cn(
+                               "absolute bottom-0 right-0 w-3 h-3 border-2 border-background rounded-full animate-pulse",
+                               isAdmin ? "bg-blue-500" : "bg-emerald-500"
+                             )} />
+                          )}
+                        </div>
                         <div className="flex flex-col">
                           <span className="font-semibold text-sm flex items-center gap-1.5">
-                            {user.name} {isMe && <Badge className="text-[9px] h-4">Me</Badge>}
+                            {user.name} {isMe && <Badge className={cn("text-[9px] h-4 font-bold uppercase", isAdmin ? "bg-blue-500" : "bg-emerald-500")}>Online</Badge>}
                           </span>
                           <span className="text-xs text-muted-foreground truncate max-w-[150px]">{user.email}</span>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
-                       <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                      <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
                         <div className="flex items-center gap-1.5"><Mail className="w-3 h-3" /> {user.email}</div>
                         <div className="flex items-center gap-1.5"><Phone className="w-3 h-3" /> {user.phone}</div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={cn("text-[10px] font-bold px-2", getRoleBadge(user.role))}>
-                        {user.role}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={cn("text-[10px] font-bold px-2", getStatusBadge(user.status))}>
-                        {user.status}
-                      </Badge>
-                    </TableCell>
+                    <TableCell><Badge variant="outline" className={cn("text-[10px] font-bold px-2", getRoleBadge(user.role))}>{user.role}</Badge></TableCell>
+                    <TableCell><Badge variant="outline" className={cn("text-[10px] font-bold px-2", getStatusBadge(user.status))}>{user.status}</Badge></TableCell>
                     <TableCell className="text-xs text-muted-foreground">{user.joinDate}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
-                        <Button variant="ghost" size="icon" onClick={() => { setSelectedUser(user); setIsViewDialogOpen(true); }}>
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setSelectedUser(user); setIsViewDialogOpen(true); }}><Eye className="w-4 h-4" /></Button>
                         {isAdmin && (
                           <>
                             <Button variant="ghost" size="icon" onClick={() => {
@@ -337,9 +342,7 @@ const Users = () => {
                               setFormData({ name: user.name, email: user.email, phone: user.phone, role: user.role, status: user.status, password: "", profile_picture: null });
                               setIsEditDialogOpen(true);
                             }}><Edit className="w-4 h-4" /></Button>
-                            <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" disabled={isMe} onClick={() => { setSelectedUser(user); setIsDeleteDialogOpen(true); }}>
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                            <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" disabled={isMe} onClick={() => { setSelectedUser(user); setIsDeleteDialogOpen(true); }}><Trash2 className="w-4 h-4" /></Button>
                           </>
                         )}
                       </div>
@@ -352,157 +355,207 @@ const Users = () => {
         </div>
       </Card>
 
+      {/* --- DIALOGS --- */}
+
       {/* VIEW DIALOG */}
-     <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-  <DialogContent className="sm:max-w-[440px] p-0 overflow-hidden border-none shadow-2xl">
-    {selectedUser && (
-      <div className="flex flex-col">
-        {/* Top Header Section with subtle gradient background */}
-        <div className="bg-slate-50 dark:bg-slate-900/50 pt-10 pb-6 px-6 border-b">
-          <div className="flex flex-col items-center text-center">
-            <div className="relative group">
-              <div className="absolute -inset-1 bg-gradient-to-r from-primary to-blue-600 rounded-full blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
-              <Avatar className="w-28 h-28 border-4 border-background relative shadow-xl">
-                <AvatarImage src={selectedUser.profile_picture} className="object-cover" />
-                <AvatarFallback className="text-4xl font-bold bg-muted text-muted-foreground">
-                  {selectedUser.initials}
-                </AvatarFallback>
-              </Avatar>
+      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+        <DialogContent className="sm:max-w-[440px] p-0 overflow-hidden border-none shadow-2xl">
+          {selectedUser && (
+            <div className="flex flex-col">
+              <div className="bg-slate-50 dark:bg-slate-900/50 pt-10 pb-6 px-6 border-b">
+                <div className="flex flex-col items-center text-center">
+                  <Avatar className="w-28 h-28 border-4 border-background relative shadow-xl">
+                    <AvatarImage src={selectedUser.profile_picture} className="object-cover" />
+                    <AvatarFallback className="text-4xl font-bold bg-muted text-muted-foreground">{selectedUser.initials}</AvatarFallback>
+                  </Avatar>
+                  <h3 className="mt-4 text-2xl font-bold tracking-tight text-foreground">{selectedUser.name}</h3>
+                  <Badge className={cn("mt-2 px-3 py-0.5 font-semibold uppercase tracking-wider text-[10px]", getRoleBadge(selectedUser.role))}>{selectedUser.role}</Badge>
+                </div>
+              </div>
+              <div className="p-8 grid grid-cols-1 gap-6 bg-background">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-4 group">
+                    <div className="p-2.5 rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground"><Mail size={18} /></div>
+                    <div className="flex flex-col"><span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Email</span><span className="text-sm font-medium">{selectedUser.email}</span></div>
+                  </div>
+                  <div className="flex items-center gap-4 group">
+                    <div className="p-2.5 rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground"><Phone size={18} /></div>
+                    <div className="flex flex-col"><span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Phone</span><span className="text-sm font-medium">{selectedUser.phone || "Not provided"}</span></div>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter className="p-6 pt-0"><Button variant="secondary" className="w-full" onClick={() => setIsViewDialogOpen(false)}>Close</Button></DialogFooter>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* EDIT DIALOG (WITH PASSWORD FIELD) */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-blue-600" /> Administrative Update</DialogTitle>
+            <DialogDescription>Modify profile details or reset security credentials for <strong>{selectedUser?.name}</strong>.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>Full Name</Label><Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Phone</Label><Input value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
+            </div>
+            <div className="grid gap-2"><Label>Email</Label><Input value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} /></div>
             
-            <h3 className="mt-4 text-2xl font-bold tracking-tight text-foreground">
-              {selectedUser.name}
-            </h3>
-            <div className="flex items-center gap-2 mt-1.5">
-              <Badge className={cn("px-3 py-0.5 font-semibold uppercase tracking-wider text-[10px]", getRoleBadge(selectedUser.role))}>
-                {selectedUser.role}
-              </Badge>
-              <div className={cn("h-1.5 w-1.5 rounded-full", 
-                selectedUser.status.toLowerCase() === "active" ? "bg-emerald-500 animate-pulse" : "bg-slate-300"
-              )} />
-            </div>
-          </div>
-        </div>
-
-        {/* Details Grid with Icons */}
-        <div className="p-8 grid grid-cols-1 gap-6 bg-background">
-          <div className="space-y-4">
-            <div className="flex items-center gap-4 group">
-              <div className="p-2.5 rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-                <Mail size={18} />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Email Address</span>
-                <span className="text-sm font-medium">{selectedUser.email}</span>
-              </div>
+            {/* PASSWORD FIELD ADDED HERE */}
+            <div className="p-3 border rounded-lg bg-muted/30 space-y-2">
+              <Label className="text-primary flex items-center gap-2 font-bold"><Key className="w-4 h-4" /> Reset Password</Label>
+              <Input type="password" placeholder="Enter new password (leave empty to keep current)" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
+              <p className="text-[10px] text-muted-foreground italic">Admin: You can bypass security and set a new password directly.</p>
             </div>
 
-            <div className="flex items-center gap-4 group">
-              <div className="p-2.5 rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-                <Phone size={18} />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>Role</Label>
+                <Select value={formData.role} onValueChange={v => setFormData({ ...formData, role: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="Admin">Admin</SelectItem><SelectItem value="Manager">Manager</SelectItem><SelectItem value="User">User</SelectItem></SelectContent>
+                </Select>
               </div>
-              <div className="flex flex-col">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Phone Number</span>
-                <span className="text-sm font-medium">{selectedUser.phone || "Not provided"}</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t mt-4">
-              <div className="flex flex-col space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Status</span>
-                <Badge variant="outline" className={cn("w-fit font-bold", getStatusBadge(selectedUser.status))}>
-                  {selectedUser.status}
-                </Badge>
-              </div>
-              <div className="flex flex-col space-y-1">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Member Since</span>
-                <span className="text-sm font-semibold">{selectedUser.joinDate}</span>
+              <div className="grid gap-2"><Label>Status</Label>
+                <Select value={formData.status} onValueChange={v => setFormData({ ...formData, status: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Inactive</SelectItem></SelectContent>
+                </Select>
               </div>
             </div>
           </div>
-        </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
+            <Button disabled={isProcessing} onClick={handleEdit}>{isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        <DialogFooter className="p-6 pt-0 bg-background">
-          <Button variant="secondary" className="w-full font-semibold shadow-sm" onClick={() => setIsViewDialogOpen(false)}>
-            Close Profile
-          </Button>
-        </DialogFooter>
-      </div>
-    )}
-  </DialogContent>
-</Dialog>
       {/* ADD DIALOG */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Register New User</DialogTitle></DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2"><Label>Full Name</Label><Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Email</Label><Input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Phone</Label><Input value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Password</Label><Input type="password" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2"><Label>Role</Label>
-                <Select value={formData.role} onValueChange={v => setFormData({ ...formData, role: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="Admin">Admin</SelectItem><SelectItem value="Manager">Manager</SelectItem><SelectItem value="User">User</SelectItem></SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2"><Label>Status</Label>
-                <Select value={formData.status} onValueChange={v => setFormData({ ...formData, status: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Inactive</SelectItem></SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid gap-2"><Label>Profile Photo</Label><Input type="file" accept="image/*" onChange={e => setFormData({ ...formData, profile_picture: e.target.files?.[0] || null })} /></div>
-          </div>
-          <DialogFooter>
-            <Button disabled={isProcessing} onClick={handleAdd}>
-              {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Create Account
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+  <DialogContent className="max-w-lg rounded-2xl">
+    <DialogHeader>
+      <DialogTitle className="text-xl font-semibold">
+        Register New User
+      </DialogTitle>
+      <p className="text-sm text-muted-foreground">
+        Create a new user account and assign access level.
+      </p>
+    </DialogHeader>
 
-      {/* EDIT DIALOG */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Modify User Profile</DialogTitle></DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2"><Label>Name</Label><Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Email</Label><Input value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Phone</Label><Input value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>New Password</Label><Input type="password" placeholder="Leave empty to keep current" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2"><Label>Role</Label>
-                <Select value={formData.role} onValueChange={v => setFormData({ ...formData, role: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="Admin">Admin</SelectItem><SelectItem value="Manager">Manager</SelectItem><SelectItem value="User">User</SelectItem></SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2"><Label>Status</Label>
-                <Select value={formData.status} onValueChange={v => setFormData({ ...formData, status: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Inactive</SelectItem></SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button disabled={isProcessing} onClick={handleEdit}>
-              {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Update Profile
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+    <div className="space-y-5 py-4">
+      {/* Basic Info */}
+      <div className="space-y-4">
+        <div>
+          <Label>Full Name</Label>
+          <Input
+            placeholder="John Doe"
+            value={formData.name}
+            onChange={(e) =>
+              setFormData({ ...formData, name: e.target.value })
+            }
+          />
+        </div>
 
-      {/* DELETE DIALOG */}
+        <div>
+          <Label>Email Address</Label>
+          <Input
+            type="email"
+            placeholder="john@example.com"
+            value={formData.email}
+            onChange={(e) =>
+              setFormData({ ...formData, email: e.target.value })
+            }
+          />
+        </div>
+
+        <div>
+          <Label>Phone Number</Label>
+          <Input
+            placeholder="+250 7XX XXX XXX"
+            value={formData.phone}
+            onChange={(e) =>
+              setFormData({ ...formData, phone: e.target.value })
+            }
+          />
+        </div>
+
+        <div>
+          <Label>Password</Label>
+          <Input
+            type="password"
+            placeholder="••••••••"
+            value={formData.password}
+            onChange={(e) =>
+              setFormData({ ...formData, password: e.target.value })
+            }
+          />
+        </div>
+      </div>
+
+      {/* Role & Status */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label>Role</Label>
+          <Select
+            value={formData.role}
+            onValueChange={(v) =>
+              setFormData({ ...formData, role: v })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select role" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Admin">Admin</SelectItem>
+              <SelectItem value="Manager">Manager</SelectItem>
+              <SelectItem value="User">User</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label>Status</Label>
+          <Select
+            value={formData.status}
+            onValueChange={(v) =>
+              setFormData({ ...formData, status: v })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Active">Active</SelectItem>
+              <SelectItem value="Inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
+
+    <DialogFooter className="pt-4">
+      <Button
+        className="w-full rounded-xl"
+        disabled={isProcessing}
+        onClick={handleAdd}
+      >
+        {isProcessing && (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        )}
+        Create Account
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+
+      {/* DELETE ALERT */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Permanent Deletion?</AlertDialogTitle>
-            <AlertDialogDescription>Remove <strong>{selectedUser?.name}</strong>? This action is permanent and cannot be undone.</AlertDialogDescription>
-          </AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>Permanent Deletion?</AlertDialogTitle><AlertDialogDescription>Remove <strong>{selectedUser?.name}</strong>? This action is permanent and cannot be reversed.</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep User</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive text-white hover:bg-destructive/90">Confirm Delete</AlertDialogAction>

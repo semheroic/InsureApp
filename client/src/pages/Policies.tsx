@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Search, Download, Edit, Trash2, Eye, Calendar as CalendarIcon } from "lucide-react";
+import { Car, User, Building2, CalendarDays, Phone, ClipboardPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
@@ -571,54 +572,147 @@ const Policies = () => {
       </Dialog>
 
       {/* ADD DIALOG - RESTORED FULL FIELDS */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Policy</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="plate">Plate Number</Label>
-              <Input id="plate" placeholder="RAE 123A" value={formData.plate} onChange={(e) => setFormData({ ...formData, plate: e.target.value })} />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="owner">Owner</Label>
-              <Input id="owner" value={formData.owner} onChange={(e) => setFormData({ ...formData, owner: e.target.value })} />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="company">Company</Label>
-              <Select value={formData.company} onValueChange={(value) => setFormData({ ...formData, company: value })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SORAS">SORAS</SelectItem>
-                  <SelectItem value="SONARWA">SONARWA</SelectItem>
-                  <SelectItem value="PRIME">PRIME</SelectItem>
-                  <SelectItem value="RADIANT">RADIANT</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Start Date</Label>
-                <Input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
-              </div>
-              <div className="grid gap-2">
-                <Label>Expiry Date</Label>
-                <Input type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Contact</Label>
-              <Input placeholder="078..." value={formData.contact} onChange={(e) => setFormData({ ...formData, contact: e.target.value })} />
+      
+
+{/* USER-FRIENDLY REDESIGNED ADD POLICY DIALOG */}
+<Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+  <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden border-none shadow-2xl rounded-2xl">
+    {/* Header with a Professional "Insurance Blue" Theme */}
+    <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 text-white">
+      <DialogHeader>
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center border border-blue-500/30">
+            <ClipboardPlus className="w-6 h-6 text-blue-400" />
+          </div>
+          <div>
+            <DialogTitle className="text-xl font-bold">New Insurance Policy</DialogTitle>
+            <DialogDescription className="text-slate-400 text-sm">
+              Register a vehicle insurance coverage details
+            </DialogDescription>
+          </div>
+        </div>
+      </DialogHeader>
+    </div>
+
+    <div className="p-6 space-y-6 bg-background">
+      {/* SECTION 1: Vehicle & Owner */}
+      <div className="space-y-4">
+        <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+          Vehicle Information
+        </h4>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="plate" className="text-xs font-semibold text-slate-700">Plate Number</Label>
+            <div className="relative">
+              <Input 
+                id="plate" 
+                placeholder="RAE 123A" 
+                value={formData.plate} 
+                onChange={(e) => setFormData({ ...formData, plate: e.target.value })} 
+                className="pl-9 bg-slate-50/50 border-slate-200 focus:ring-blue-500 uppercase"
+              />
+              <Car className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd}>Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="space-y-1.5">
+            <Label htmlFor="owner" className="text-xs font-semibold text-slate-700">Owner Name</Label>
+            <div className="relative">
+              <Input 
+                id="owner" 
+                placeholder="Full Name"
+                value={formData.owner} 
+                onChange={(e) => setFormData({ ...formData, owner: e.target.value })} 
+                className="pl-9 bg-slate-50/50 border-slate-200"
+              />
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            </div>
+          </div>
+        </div>
+      </div>
 
+      {/* SECTION 2: Insurance Provider */}
+      <div className="space-y-4">
+        <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+          Coverage Details
+        </h4>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-slate-700">Insurance Company</Label>
+            <Select value={formData.company} onValueChange={(value) => setFormData({ ...formData, company: value })}>
+              <SelectTrigger className="bg-slate-50/50 border-slate-200">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-slate-400" />
+                  <SelectValue placeholder="Select..." />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="SORAS">SORAS</SelectItem>
+                <SelectItem value="SONARWA">SONARWA</SelectItem>
+                <SelectItem value="PRIME">PRIME</SelectItem>
+                <SelectItem value="RADIANT">RADIANT</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-slate-700">Contact Number</Label>
+            <div className="relative">
+              <Input 
+                placeholder="078..." 
+                value={formData.contact} 
+                onChange={(e) => setFormData({ ...formData, contact: e.target.value })} 
+                className="pl-9 bg-slate-50/50 border-slate-200"
+              />
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            </div>
+          </div>
+        </div>
+
+        {/* SECTION 3: Timeline */}
+        <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100 grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-[10px] font-bold text-blue-700 uppercase">Effective Date</Label>
+            <div className="relative">
+              <Input 
+                type="date" 
+                value={formData.startDate} 
+                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} 
+                className="bg-white border-blue-200 h-9 text-sm"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[10px] font-bold text-blue-700 uppercase">Expiration Date</Label>
+            <div className="relative">
+              <Input 
+                type="date" 
+                value={formData.expiryDate} 
+                onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} 
+                className="bg-white border-blue-200 h-9 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Footer with emphasis on the Save Action */}
+    <DialogFooter className="p-6 pt-0 bg-background flex flex-row gap-3">
+      <Button 
+        variant="ghost" 
+        onClick={() => setIsAddDialogOpen(false)}
+        className="flex-1 font-semibold text-slate-500 hover:bg-slate-100"
+      >
+        Cancel
+      </Button>
+      <Button 
+        onClick={handleAdd}
+        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-200 transition-all active:scale-95"
+      >
+        Save Policy
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
       {/* EDIT DIALOG - RESTORED FULL FIELDS */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>

@@ -301,10 +301,10 @@ export const Header = () => {
 
               <div className="p-1 space-y-1">
                 <Button variant="ghost" onClick={() => navigate(`/users/edit/${user.id}`)} className="w-full justify-start gap-4 h-12 rounded-xl text-sm font-semibold hover:bg-primary/5 hover:text-primary transition-all duration-300">
-                  <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center"><Edit className="w-4 h-4 opacity-70" /></div> Account Settings
+                  <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center"><Edit className="w-4 h-4 opacity-70" /></div> Edit Profile
                 </Button>
                 <Button variant="ghost" onClick={handleLogout} className="w-full justify-start gap-4 h-12 rounded-xl text-sm font-black text-red-500 transition-all duration-300 uppercase tracking-widest">
-                  <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center"><LogOut className="w-4 h-4" /></div> End Session
+                  <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center"><LogOut className="w-4 h-4" /></div>Log Out
                 </Button>
               </div>
             </DropdownMenuContent>

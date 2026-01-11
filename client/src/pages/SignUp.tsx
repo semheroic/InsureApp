@@ -22,7 +22,7 @@ const AddUser = () => {
     phone: "",
     password: "",
     role: "User",
-    status: "Active",
+    status: "Inactive",
   });
 
   const [showPassword, setShowPassword] = useState(false);
@@ -177,37 +177,6 @@ const AddUser = () => {
                 </button>
               </div>
             </div>
-
-            {/* Role & Status */}
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase text-slate-300">System Role</Label>
-                <Select value={formData.role} onValueChange={(v) => setFormData({ ...formData, role: v })}>
-                  <SelectTrigger className="h-11 bg-white/10 border-white/20 text-white focus:ring-blue-500">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-white/20 text-white">
-                    <SelectItem value="Admin">Admin</SelectItem>
-                    <SelectItem value="Manager">Manager</SelectItem>
-                    <SelectItem value="User">Standard User</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase text-slate-300">Account Status</Label>
-                <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
-                  <SelectTrigger className="h-11 bg-white/10 border-white/20 text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-900 border-white/20 text-white">
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
             <div className="pt-4 space-y-4">
               <Button 
                 className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all"

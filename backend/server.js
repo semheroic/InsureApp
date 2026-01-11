@@ -33,26 +33,18 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // ======================== DATABASE ========================
 const dbConfig = {
-  // Priority 1: Railway's automatic MYSQL_URL (most reliable)
-  // Priority 2: Your custom DB_HOST/MYSQLHOST
-  host: process.env.MYSQLHOST || process.env.DB_HOST || 'localhost',
-  
-  // INTERNAL Railway port is ALWAYS 3306. 
-  // Only use 25758 if you are connecting from your laptop.
-  port: process.env.MYSQLPORT || (process.env.RAILWAY_ENVIRONMENT ? 3306 : 25758),
-  
-  user: process.env.MYSQLUSER || process.env.DB_USER,
-  password: process.env.MYSQLPASSWORD || process.env.DB_PASS,
-  database: process.env.MYSQLDATABASE || process.env.DB_NAME,
+  // Use your exact variable names from Railway
+  host: process.env.DB_HOST, 
+  port: 3306, // Always use 3306 for internal Railway connections
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME,
   
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
   multipleStatements: true,
-  
-  // Railway internal connections MUST NOT use SSL usually.
-  // We only enable SSL if we are NOT on Railway (local dev connecting to cloud).
-  ssl: process.env.RAILWAY_ENVIRONMENT ? false : { rejectUnauthorized: false }, 
+  ssl: false, // Internal connections don't need SSL
   connectTimeout: 30000 
 };
 

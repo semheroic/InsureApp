@@ -83,6 +83,7 @@ const API_URL = import.meta.env.VITE_API_URL;
   };
 
   return (
+    <form method="POST">
     <div className="relative min-h-screen w-full flex items-center justify-center p-4 overflow-hidden bg-slate-950">
       
       {/* 1. Background Image Layer (Clearer background) */}
@@ -183,6 +184,7 @@ const API_URL = import.meta.env.VITE_API_URL;
         </p>
       </div>
     </div>
+    </form>
   );
 };
 

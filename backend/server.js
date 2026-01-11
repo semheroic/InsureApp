@@ -27,7 +27,10 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 // ======================== MIDDLEWARE ========================
-app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+app.use(cors({
+  origin: "https://insure-app-olive.vercel.app", // <-- must be a string
+  credentials: true // required if using cookies/sessions
+}));
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 

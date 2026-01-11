@@ -36,15 +36,16 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // ======================== DATABASE ========================
 // ======================== DATABASE ========================
 // ======================== DATABASE ========================
-console.log("Checking Railway MySQL Variables...");
+console.log("ENV:", process.env.NODE_ENV);
 console.log("MYSQLHOST exists:", !!process.env.MYSQLHOST);
+const isProduction = process.env.NODE_ENV === "production";
 
 const db = mysql.createPool({
-  host: process.env.MYSQLHOST,
-  user: process.env.MYSQLUSER,
-  password: process.env.MYSQLPASSWORD,
-  database: process.env.MYSQLDATABASE,
-  port: process.env.MYSQLPORT || 3306,
+  host: isProduction ? process.env.MYSQLHOST : process.env.DB_HOST,
+  user: isProduction ? process.env.MYSQLUSER : process.env.DB_USER,
+  password: isProduction ? process.env.MYSQLPASSWORD : process.env.DB_PASS,
+  database: isProduction ? process.env.MYSQLDATABASE : process.env.DB_NAME,
+  port: isProduction ? process.env.MYSQLPORT : process.env.DB_PORT || 3306,
 
   waitForConnections: true,
   connectionLimit: 10,
@@ -52,8 +53,8 @@ const db = mysql.createPool({
   multipleStatements: true,
   connectTimeout: 60000,
 });
-
 const query = util.promisify(db.query).bind(db);
+console.log("DB MODE:", isProduction ? "Railway" : "Local");
 
 
 // ======================== SESSION ========================

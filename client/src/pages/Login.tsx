@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate, Link } from "react-router-dom";
-import { ShieldCheck, Mail, Lock, Eye, EyeOff, ChevronRight, ArrowRight } from "lucide-react";
+import { ShieldCheck, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import LOGO from "./LOGO.png";
 
 const Login = () => {
@@ -19,14 +19,13 @@ const Login = () => {
     password: "",
   });
 
-const API_URL = import.meta.env.VITE_API_URL;
+  const API_URL = import.meta.env.VITE_API_URL;
 
   // Check if user is already logged in on mount
   useEffect(() => {
     fetch(`${API_URL}/auth/me`, { credentials: "include" })
       .then(async (res) => {
         if (res.ok) {
-          // If the server says we are logged in, go to dashboard
           navigate("/dashboard");
         }
       })
@@ -61,15 +60,11 @@ const API_URL = import.meta.env.VITE_API_URL;
         });
       }
 
-      // SUCCESS: The session cookie is now set in the browser automatically.
-      // We don't need to store the role in localStorage because our 
-      // Dashboard will fetch the role from /auth/me when it loads.
-      
-      toast({ 
-        title: "Welcome back!", 
-        description: `Access granted as ${data.role}.` 
+      toast({
+        title: "Welcome back!",
+        description: `Access granted as ${data.role}.`,
       });
-      
+
       navigate("/dashboard");
     } catch {
       toast({
@@ -83,7 +78,6 @@ const API_URL = import.meta.env.VITE_API_URL;
   };
 
   return (
-    <form method="POST">
     <div className="relative min-h-screen w-full flex items-center justify-center p-4 overflow-hidden bg-slate-950">
       
       {/* 1. Background Image Layer (Clearer background) */}
@@ -92,7 +86,6 @@ const API_URL = import.meta.env.VITE_API_URL;
           className="absolute inset-0 bg-cover bg-center bg-no-repeat scale-105"
           style={{ backgroundImage: `url(${LOGO})` }}
         />
-        {/* Darker overlay to make white text readable, but no blur here */}
         <div className="absolute inset-0 bg-slate-950/40" />
       </div>
 
@@ -117,7 +110,14 @@ const API_URL = import.meta.env.VITE_API_URL;
             <p className="text-slate-300 text-sm">Please enter your credentials.</p>
           </div>
 
-          <div className="space-y-5">
+          {/* Form Wrapper */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleLogin();
+            }}
+            className="space-y-5"
+          >
             {/* Email Field */}
             <div className="space-y-2">
               <Label className="text-xs font-bold uppercase text-slate-300 tracking-wider">Work Email</Label>
@@ -137,7 +137,11 @@ const API_URL = import.meta.env.VITE_API_URL;
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <Label className="text-xs font-bold uppercase text-slate-300 tracking-wider">Secret Password</Label>
-                <Link to="/forgot-password" size="sm" className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors">
+                <Link
+                  to="/forgot-password"
+                  size="sm"
+                  className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors"
+                >
                   Fortget Password?
                 </Link>
               </div>
@@ -160,14 +164,14 @@ const API_URL = import.meta.env.VITE_API_URL;
               </div>
             </div>
 
-            <Button 
-              className="w-full h-12 mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]" 
-              onClick={handleLogin} 
+            <Button
+              type="submit"
+              className="w-full h-12 mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]"
               disabled={loading}
             >
               {loading ? "Verifying..." : "Login to Dashboard"}
             </Button>
-          </div>
+          </form>
 
           <div className="mt-8 pt-6 border-t border-white/10 text-center">
             <p className="text-sm text-slate-300">
@@ -178,13 +182,12 @@ const API_URL = import.meta.env.VITE_API_URL;
             </p>
           </div>
         </div>
-        
+
         <p className="text-center text-slate-400 text-[10px] mt-8 uppercase tracking-[0.2em]">
           Internal Use Only • Encrypted Session
         </p>
       </div>
     </div>
-    </form>
   );
 };
 

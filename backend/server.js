@@ -32,10 +32,13 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // ======================== DATABASE ========================
 
 // ======================== DATABASE ========================
+// ======================== DATABASE ========================
+console.log("Checking DB Variables...");
+console.log("DB_HOST exists:", !!process.env.DB_HOST);
+
 const dbConfig = {
-  // Use your exact variable names from Railway
   host: process.env.DB_HOST, 
-  port: 3306, // Always use 3306 for internal Railway connections
+  port: parseInt(process.env.DB_PORT) || 3306,
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
   database: process.env.DB_NAME,
@@ -44,8 +47,8 @@ const dbConfig = {
   connectionLimit: 10,
   queueLimit: 0,
   multipleStatements: true,
-  ssl: false, // Internal connections don't need SSL
-  connectTimeout: 30000 
+  ssl: false, 
+  connectTimeout: 60000 
 };
 
 const db = mysql.createPool(dbConfig);

@@ -61,11 +61,12 @@ console.log("DB MODE:", isProduction ? "Railway" : "Local");
 const sessionStore = new MySQLStore(
   {
     clearExpired: true,
-    checkExpirationInterval: 15 * 60 * 1000, // 15 min
-    expiration: 8 * 60 * 60 * 1000 // 8 hours
+    checkExpirationInterval: 1000, // check every 1 second
+    expiration: 1000 // sessions expire after 1 second
   },
   db
 );
+
 
 app.use(session({
   key: "insureapp_session",

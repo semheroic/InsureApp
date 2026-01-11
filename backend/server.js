@@ -76,10 +76,11 @@ app.use(session({
   store: sessionStore,
   resave: false,
   saveUninitialized: false,
-  cookie: { 
-    maxAge: 1000 * 60 * 60 * 8, // 8 hours
+  cookie: {
+    maxAge: 1000 * 60 * 60 * 8,
     httpOnly: true,
-    secure: false 
+    secure: isProduction,   // Must be true in production for HTTPS
+    sameSite: isProduction ? "none" : "lax"
   }
 }));
 

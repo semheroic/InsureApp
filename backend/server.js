@@ -1,4 +1,6 @@
-require("dotenv").config();
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv").config();
+}
 const express = require("express");
 const cors = require("cors");
 const mysql = require("mysql2");
@@ -33,26 +35,26 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // ======================== DATABASE ========================
 // ======================== DATABASE ========================
-console.log("Checking DB Variables...");
-console.log("DB_HOST exists:", !!process.env.DB_HOST);
+// ======================== DATABASE ========================
+console.log("Checking Railway MySQL Variables...");
+console.log("MYSQLHOST exists:", !!process.env.MYSQLHOST);
 
-const dbConfig = {
-  host: process.env.DB_HOST, 
-  port: parseInt(process.env.DB_PORT) || 3306,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  database: process.env.DB_NAME,
-  
+const db = mysql.createPool({
+  host: process.env.MYSQLHOST,
+  user: process.env.MYSQLUSER,
+  password: process.env.MYSQLPASSWORD,
+  database: process.env.MYSQLDATABASE,
+  port: process.env.MYSQLPORT || 3306,
+
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
   multipleStatements: true,
-  ssl: false, 
-  connectTimeout: 60000 
-};
+  connectTimeout: 60000,
+});
 
-const db = mysql.createPool(dbConfig);
 const query = util.promisify(db.query).bind(db);
+
 
 // ======================== SESSION ========================
 const sessionStore = new MySQLStore(

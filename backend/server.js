@@ -402,7 +402,7 @@ app.get("/users/:id", async (req, res) => {
 app.post("/users", upload.single("profile_picture"), async (req, res) => {
   try {
     const { name, email, phone, password, role } = req.body;
-    const finalRole = role || "User"; // Define the role once to use in DB and Email
+    const finalRole = role || "User";
 
     // 1. Basic Validation
     if (!name || !email || !password || !phone) {
@@ -431,32 +431,39 @@ app.post("/users", upload.single("profile_picture"), async (req, res) => {
       [name, email, phone, hashed, finalRole, profile_picture]
     );
 
-    // --- SEND EMAIL (Updated with Role) ---
+    // 5. SEND EMAIL IN BACKGROUND (Notice: No 'await' here)
     const mailOptions = {
       from: '"System Administrator" <your-email@gmail.com>',
       to: email,
       subject: "Welcome to the System - Your Credentials",
       html: `
-        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; line-height: 1.6;">
+        <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee;">
           <h2 style="color: #2563eb;">Welcome, ${name}!</h2>
-          <p>Your account has been created successfully by the Administrator.</p>
-          <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
-            <p style="margin: 5px 0;"><strong>Email:</strong> ${email}</p>
-            <p style="margin: 5px 0;"><strong>Password:</strong> ${password}</p>
-            <p style="margin: 5px 0;"><strong>Assigned Role:</strong> <span style="color: #1e40af; font-weight: bold;">${finalRole}</span></p>
-          </div>
-          <p style="margin-top: 15px; font-size: 0.9em; color: #64748b;">
-            Please log in and change your password as soon as possible for security reasons.
-          </p>
+          <p>Email: ${email}</p>
+          <p>Password: ${password}</p>
+          <p>Role: ${finalRole}</p>
         </div>
       `,
     };
 
-    await transporter.sendMail(mailOptions);
+    // We do NOT 'await' this. If it fails, the user is still created.
+    transporter.sendMail(mailOptions).catch(err => {
+      console.error("Email failed background send:", err.message);
+    });
 
-    res.status(201).json({ id: result.insertId, name, email, role: finalRole });
+    // 6. RESPOND IMMEDIATELY TO FRONTEND
+    // This ensures the frontend gets a 201 status right away and shows the toast.
+    return res.status(201).json({ 
+      id: result.insertId, 
+      name, 
+      email, 
+      role: finalRole,
+      message: "User created successfully" 
+    });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Route Error:", err.message);
+    return res.status(500).json({ error: err.message });
   }
 });
 

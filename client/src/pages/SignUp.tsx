@@ -50,16 +50,40 @@ const AddUser = () => {
   // Add your other validations here (e.g., name, email)
   return true;
 };
-  const handleAdd = async () => {
+  const handleAdd = async (e) => {
+    // 1. Prevent form default if called from a submit event
+    e?.preventDefault(); 
+
     if (!validateInput()) return;
     setLoading(true);
 
     try {
-      const res = await fetch(API_URL, {
+      // 2. Create FormData object to match backend 'upload.single' middleware
+      const formDataToSend = new FormData();
+      formDataToSend.append("name", formData.name);
+      formDataToSend.append("email", formData.email);
+      formDataToSend.append("phone", formData.phone);
+      formDataToSend.append("password", formData.password);
+      formDataToSend.append("role", formData.role);
+      
+      // Note: Even if you don't have a file yet, sending as FormData 
+      // ensures the backend middleware (multer) doesn't crash.
+
+      const res = await fetch(`${API_URL}/users`, { // Ensure /users is added
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        // 3. IMPORTANT: Do NOT set 'Content-Type' header. 
+        // The browser will automatically set it to 'multipart/form-data' 
+        // with the correct boundary for you.
+        body: formDataToSend,
       });
+
+      // 4. Check if the response is actually JSON before parsing
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const errorText = await res.text();
+        console.error("Server Error Response:", errorText);
+        throw new Error("The server returned an unexpected response. Please check the network tab.");
+      }
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to add user.");

@@ -69,7 +69,8 @@ const sessionStore = new MySQLStore(
   },
   db
 );
-app.set("trust proxy", 1);
+app.set("trust proxy", 1); 
+
 app.use(session({
   key: "insureapp_session",
   secret: process.env.SESSION_SECRET || "supersecretkey",
@@ -79,8 +80,9 @@ app.use(session({
   cookie: {
     maxAge: 1000 * 60 * 60 * 8,
     httpOnly: true,
-    secure: isProduction,   // Must be true in production for HTTPS
-    sameSite: isProduction ? "none" : "lax"
+    // Change this part to be more robust:
+    secure: true, 
+    sameSite: "none"
   }
 }));
 

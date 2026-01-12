@@ -69,7 +69,7 @@ const sessionStore = new MySQLStore(
   },
   db
 );
-
+app.set("trust proxy", 1);
 app.use(session({
   key: "insureapp_session",
   secret: process.env.SESSION_SECRET || "supersecretkey",

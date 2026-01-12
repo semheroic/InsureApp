@@ -27,7 +27,7 @@ const AddUser = () => {
 
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const API_URL = "http://localhost:5000/users";
+  const API_URL = import.meta.env.VITE_API_URL;
 
  const validateInput = () => {
   // Rwandan Regex: Supports +2507..., 2507..., or 07...

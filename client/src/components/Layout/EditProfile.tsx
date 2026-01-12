@@ -43,6 +43,8 @@ export const EditProfile = () => {
     profile_picture: "",
   });
 
+  // Track the logged-in user to check permissions
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [password, setPassword] = useState("");
@@ -50,8 +52,16 @@ export const EditProfile = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    const fetchUser = async () => {
+    const fetchData = async () => {
       try {
+        // 1. Fetch current logged-in user role
+        const authRes = await fetch(`${API_URL}/auth/me`, { credentials: "include" });
+        if (authRes.ok) {
+          const authData = await authRes.json();
+          setCurrentUser(authData);
+        }
+
+        // 2. Fetch target user profile
         const res = await fetch(`${API_URL}/users/${id}`, { credentials: "include" });
         if (!res.ok) throw new Error("User not found");
         const data: User = await res.json();
@@ -66,7 +76,7 @@ export const EditProfile = () => {
         setLoading(false);
       }
     };
-    fetchUser();
+    fetchData();
   }, [id, navigate, toast]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -83,8 +93,13 @@ export const EditProfile = () => {
       formData.append("name", user.name);
       formData.append("email", user.email);
       formData.append("phone", user.phone);
-      formData.append("role", user.role);
-      formData.append("status", user.status);
+      
+      // Only Admin can update role and status
+      if (currentUser?.role === "Admin") {
+        formData.append("role", user.role);
+        formData.append("status", user.status);
+      }
+
       if (password) formData.append("password", password);
       if (fileInputRef.current?.files?.[0]) {
         formData.append("profile_picture", fileInputRef.current.files[0]);
@@ -113,6 +128,8 @@ export const EditProfile = () => {
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
     </div>
   );
+
+  const isAdmin = currentUser?.role === "Admin";
 
   return (
     <div className="min-h-screen bg-slate-50/50 p-4 md:p-8">
@@ -198,7 +215,8 @@ export const EditProfile = () => {
                     <Label className="text-xs font-bold uppercase text-slate-500">User Role</Label>
                     <div className="relative">
                       <select
-                        className="w-full h-11 pl-10 pr-4 border rounded-md bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none appearance-none border-slate-200"
+                        disabled={!isAdmin}
+                        className={`w-full h-11 pl-10 pr-4 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none appearance-none border-slate-200 ${!isAdmin ? 'bg-slate-50 cursor-not-allowed text-slate-400' : 'bg-white'}`}
                         value={user.role}
                         onChange={(e) => setUser({ ...user, role: e.target.value as User["role"] })}
                       >
@@ -210,7 +228,7 @@ export const EditProfile = () => {
                     </div>
                   </div>
 
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
+                  <div className={`p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between ${!isAdmin && 'opacity-60'}`}>
                     <div className="space-y-0.5">
                       <Label className="text-sm font-bold">Account Status</Label>
                       <p className="text-xs text-slate-500">Set if this user is allowed to login.</p>
@@ -220,6 +238,7 @@ export const EditProfile = () => {
                         {user.status}
                       </span>
                       <Switch
+                        disabled={!isAdmin}
                         checked={user.status === "Active"}
                         onCheckedChange={(checked) => setUser({ ...user, status: checked ? "Active" : "Inactive" })}
                       />

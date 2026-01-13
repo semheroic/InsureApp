@@ -96,7 +96,7 @@ const Login = () => {
             <ShieldCheck className="w-10 h-10 text-white" />
           </div>
           <h1 className="text-3xl font-black text-white tracking-tight uppercase drop-shadow-md">
-            Bright Insurance Agency
+            Bright Cover Agency
           </h1>
           <p className="text-slate-200 text-sm mt-1 uppercase tracking-widest font-semibold drop-shadow-sm">
             Authorized Personnel Only
@@ -183,9 +183,10 @@ const Login = () => {
           </div>
         </div>
 
-        <p className="text-center text-slate-400 text-[10px] mt-8 uppercase tracking-[0.2em]">
-          Internal Use Only • Encrypted Session
-        </p>
+       <p className="text-center text-slate-400 text-[10px] mt-8 uppercase tracking-[0.2em]">
+  &copy; {new Date().getFullYear()} Bright Cover Agency. All rights reserved.
+</p>
+
       </div>
     </div>
   );

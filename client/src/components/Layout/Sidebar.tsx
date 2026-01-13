@@ -66,7 +66,8 @@ export const Sidebar = () => {
             <span className="text-white font-black text-xl">B</span>
           </div>
           <div className="flex flex-col">
-            <span className="font-bold text-slate-900 dark:text-slate-100 leading-tight tracking-tight">Bright Cover Agency</span>
+            <span className="font-bold text-slate-900 dark:text-slate-100 leading-tight tracking-tight">Bright Cover
+            Agency</span>
           </div>
         </div>
       </div>
@@ -129,7 +130,7 @@ export const Sidebar = () => {
           </div>
           <div className="flex flex-col">
             <span className="text-xs font-bold text-slate-900 dark:text-slate-100 capitalize">{userRole || 'Admin'}</span>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Profile Verified By Bright Agency Team </span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">Verified Profile </span>
           </div>
         </div>
       </div>

@@ -323,6 +323,47 @@ const Policies = () => {
       toast({ title: "Error", description: "Delete failed", variant: "destructive" });
     }
   };
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = async () => {
+    try {
+      const text = reader.result as string;
+      const lines = text.split("\n").filter(Boolean);
+
+      const headers = lines[0].split(",").map(h => h.trim());
+      const rows = lines.slice(1);
+
+      const policies = rows.map(row => {
+        const values = row.split(",").map(v => v.trim());
+        const record: any = {};
+        headers.forEach((h, i) => (record[h] = values[i]));
+        return record;
+      });
+
+      await axios.post(`${API_URL}/import`, { policies });
+
+      toast({
+        title: "Import Successful",
+        description: `${policies.length} policies imported`,
+      });
+
+      checkAuthAndFetch();
+    } catch (error) {
+      toast({
+        title: "Import Failed",
+        description: "Invalid file format",
+        variant: "destructive",
+      });
+    }
+  };
+
+  reader.readAsText(file);
+};
+
 
   const exportToCSV = () => {
     const headers = ["Plate", "Owner", "Company", "Start Date", "Expiry Date", "Days Remaining", "Status", "Contact"];
@@ -349,6 +390,23 @@ const Policies = () => {
           <Button variant="outline" className="gap-2" onClick={exportToCSV}>
             <Download className="w-4 h-4" /> Export CSV
           </Button>
+          <Button
+  variant="outline"
+  className="gap-2"
+  onClick={() => document.getElementById("import-file")?.click()}
+>
+  <Download className="w-4 h-4 rotate-180" />
+  Import CSV
+</Button>
+
+<input
+  id="import-file"
+  type="file"
+  accept=".csv"
+  hidden
+  onChange={handleImport}
+/>
+
           {isAdmin && (
             <Button variant="outline" className="gap-2" onClick={() => setIsMessageDialogOpen(true)}>
               <Search className="w-4 h-4" /> Broadcast SMS

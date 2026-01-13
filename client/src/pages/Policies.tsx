@@ -323,12 +323,11 @@ const Policies = () => {
       toast({ title: "Error", description: "Delete failed", variant: "destructive" });
     }
   };
-  const normalizeDate = (value: string) => {
+const normalizeDate = (value: string) => {
   const d = new Date(value);
   if (isNaN(d.getTime())) return null;
   return d.toISOString().split("T")[0]; // YYYY-MM-DD
 };
- const requiredHeaders = ["plate", "owner", "company", "start date", "expiry date", "contact"];
 
 const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
@@ -339,21 +338,15 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
   reader.onload = async () => {
     try {
       const text = reader.result as string;
-      const lines = text.split("\n").filter(line => line.trim() !== "");
+      const lines = text.split("\n").filter(l => l.trim());
 
-      if (lines.length < 2) throw new Error("CSV is empty");
-
-      // Normalize headers
       const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
-
-      // Check required columns
-      const missing = requiredHeaders.filter(h => !headers.includes(h));
-      if (missing.length) throw new Error(`Missing columns: ${missing.join(", ")}`);
 
       const policies = lines.slice(1).map(line => {
         const values = line.split(",").map(v => v.trim());
+
         const row: any = {};
-        headers.forEach((h, i) => (row[h] = values[i] || ""));
+        headers.forEach((h, i) => (row[h] = values[i]));
 
         return {
           plate: row["plate"],
@@ -361,17 +354,28 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
           company: row["company"],
           start_date: normalizeDate(row["start date"]),
           expiry_date: normalizeDate(row["expiry date"]),
-          contact: row["contact"].startsWith("0") ? row["contact"] : "0" + row["contact"],
+          contact: row["contact"].startsWith("0")
+            ? row["contact"]
+            : "0" + row["contact"],
         };
       });
 
-      await axios.post(`${API_URL}/import`, { policies });
-      toast({ title: "Import Successful", description: `${policies.length} policies imported` });
+      await axios.post(
+        `${API_URL}/import`,
+        { policies },
+        { headers: { "Content-Type": "application/json" } }
+      );
+
+      toast({
+        title: "Import Successful",
+        description: `${policies.length} policies imported`,
+      });
+
       checkAuthAndFetch();
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: "Import Failed",
-        description: err.message || "Invalid CSV structure",
+        description: "Invalid CSV structure",
         variant: "destructive",
       });
     }
@@ -379,9 +383,6 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
   reader.readAsText(file);
 };
-
-
-
   const exportToCSV = () => {
     const headers = ["Plate", "Owner", "Company", "Start Date", "Expiry Date", "Days Remaining", "Status", "Contact"];
     const rows = filteredPolicies.map((p) => [p.plate, p.owner, p.company, p.start_date, p.expiry_date, p.days_remaining, p.status, p.contact]);

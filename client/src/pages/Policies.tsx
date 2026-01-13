@@ -323,6 +323,11 @@ const Policies = () => {
       toast({ title: "Error", description: "Delete failed", variant: "destructive" });
     }
   };
+  const normalizeDate = (value: string) => {
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().split("T")[0]; // YYYY-MM-DD
+};
  const requiredHeaders = ["plate", "owner", "company", "start date", "expiry date", "contact"];
 
 const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {

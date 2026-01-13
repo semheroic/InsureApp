@@ -674,54 +674,7 @@ app.post("/policies",async (req, res) => {
 });
 
 // PUT: Renew policy and log history
-app.put("/policies/:id", isAdmin,async (req, res) => {
-  try {
-    const { plate, owner, company, start_date, expiry_date, contact } = req.body;
-    const policyId = req.params.id;
 
-    // 1. Check if the contact is already used by ANOTHER policy
-    // We search for the contact where the ID is NOT the one we are currently updating
-    const existingContact = await query(
-      "SELECT id FROM policies WHERE contact = ? AND id != ?", 
-      [contact, policyId]
-    );
-
-    if (existingContact.length > 0) {
-      return res.status(400).json({ 
-        error: "This contact number is already assigned to another policy." 
-      });
-    }
-
-    // 2. Log current state into policy_history BEFORE updating
-    const currentPolicy = await query("SELECT expiry_date FROM policies WHERE id = ?", [policyId]);
-    
-    if (currentPolicy.length > 0) {
-      await query(
-        "INSERT INTO policy_history (policy_id, expiry_date, renewed_date) VALUES (?, ?, ?)",
-        [policyId, currentPolicy[0].expiry_date, new Date()]
-      );
-    }
-
-    // 3. Update the main policy table
-    await query(
-      `UPDATE policies 
-       SET plate=?, owner=?, company=?, start_date=?, expiry_date=?, contact=?, updated_at=NOW() 
-       WHERE id=?`,
-      [plate, owner, company, start_date, expiry_date, contact, policyId]
-    );
-
-    sendSMS(contact, `Your insurance policy for ${plate} has been renewed. New period: ${start_date} to ${expiry_date}.`)
-      .catch(console.error);
-
-    res.json({ message: "Policy renewed successfully", status: "Renewed" });
-  } catch (err) {
-    // Catch unique constraint violation if manual check fails or race condition occurs
-    if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(400).json({ error: "Contact number already exists in the system." });
-    }
-    res.status(500).json({ error: err.message });
-  }
-});
 app.delete("/policies/:id", isAdmin,async (req,res)=>{ await query("DELETE FROM policies WHERE id=?",[req.params.id]); res.json({ message:"Policy deleted" }); });
 
 // ======================== DASHBOARD / STATS ========================
@@ -1072,26 +1025,71 @@ app.post("/api/policies/broadcast", async (req, res) => {
 app.post("/policies/import", isAdmin, async (req, res) => {
   const { policies } = req.body;
 
+  // 1️⃣ Validate payload
+  if (!Array.isArray(policies) || policies.length === 0) {
+    return res.status(400).json({
+      error: "Invalid format: policies must be a non-empty array"
+    });
+  }
+
+  const connection = await db.promise().getConnection();
+
   try {
-    for (const p of policies) {
-      await query(
+    await connection.beginTransaction();
+
+    let inserted = 0;
+
+    for (const [index, p] of policies.entries()) {
+      const {
+        plate,
+        owner,
+        company,
+        start_date,
+        expiry_date,
+        contact
+      } = p;
+
+      // 2️⃣ Row validation
+      if (!plate || !owner || !company || !start_date || !expiry_date || !contact) {
+        throw new Error(`Row ${index + 1}: Missing required fields`);
+      }
+
+      // 3️⃣ Normalize values
+      const normalizedCompany = company.trim().toUpperCase();
+      const normalizedContact = String(contact).trim();
+
+      await connection.query(
         `INSERT INTO policies 
-        (plate, owner, company, start_date, expiry_date, contact)
-        VALUES (?, ?, ?, ?, ?, ?)`,
+         (plate, owner, company, start_date, expiry_date, contact)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
-          p.plate,
-          p.owner,
-          p.company,
-          p.start_date,
-          p.expiry_date,
-          p.contact,
+          plate.trim(),
+          owner.trim(),
+          normalizedCompany,
+          start_date,
+          expiry_date,
+          normalizedContact
         ]
       );
+
+      inserted++;
     }
 
-    res.json({ success: true, count: policies.length });
+    await connection.commit();
+
+    res.json({
+      success: true,
+      count: inserted
+    });
+
   } catch (err) {
-    res.status(500).json({ error: "Import failed" });
+    await connection.rollback();
+
+    res.status(400).json({
+      error: err.message || "Import failed due to invalid data"
+    });
+  } finally {
+    connection.release();
   }
 });
 

@@ -323,7 +323,13 @@ const Policies = () => {
       toast({ title: "Error", description: "Delete failed", variant: "destructive" });
     }
   };
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const normalizeDate = (value: string) => {
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().split("T")[0]; // YYYY-MM-DD
+};
+
+const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
   if (!file) return;
 
@@ -332,19 +338,33 @@ const Policies = () => {
   reader.onload = async () => {
     try {
       const text = reader.result as string;
-      const lines = text.split("\n").filter(Boolean);
+      const lines = text.split("\n").filter(l => l.trim());
 
-      const headers = lines[0].split(",").map(h => h.trim());
-      const rows = lines.slice(1);
+      const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
 
-      const policies = rows.map(row => {
-        const values = row.split(",").map(v => v.trim());
-        const record: any = {};
-        headers.forEach((h, i) => (record[h] = values[i]));
-        return record;
+      const policies = lines.slice(1).map(line => {
+        const values = line.split(",").map(v => v.trim());
+
+        const row: any = {};
+        headers.forEach((h, i) => (row[h] = values[i]));
+
+        return {
+          plate: row["plate"],
+          owner: row["owner"],
+          company: row["company"],
+          start_date: normalizeDate(row["start date"]),
+          expiry_date: normalizeDate(row["expiry date"]),
+          contact: row["contact"].startsWith("0")
+            ? row["contact"]
+            : "0" + row["contact"],
+        };
       });
 
-      await axios.post(`${API_URL}/import`, { policies });
+      await axios.post(
+        `${API_URL}/import`,
+        { policies },
+        { headers: { "Content-Type": "application/json" } }
+      );
 
       toast({
         title: "Import Successful",
@@ -352,10 +372,10 @@ const Policies = () => {
       });
 
       checkAuthAndFetch();
-    } catch (error) {
+    } catch (err) {
       toast({
         title: "Import Failed",
-        description: "Invalid file format",
+        description: "Invalid CSV structure",
         variant: "destructive",
       });
     }

@@ -1023,6 +1023,8 @@ app.post("/api/policies/broadcast", async (req, res) => {
 });
 // import policies cvs 
 app.post("/policies/import", isAdmin, async (req, res) => {
+  console.log("IMPORT BODY:", req.body);
+
   const { policies } = req.body;
 
   // 1️⃣ Validate payload

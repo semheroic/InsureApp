@@ -115,7 +115,7 @@ const AddUser = () => {
           <div>
             <div className="flex items-center gap-2 mb-12">
               <ShieldCheck className="w-10 h-10 text-blue-200" />
-              <span className="text-xl font-bold tracking-tight uppercase">Bright Insurance Agency</span>
+              <span className="text-xl font-bold tracking-tight uppercase">Bright Cover Agency</span>
             </div>
             <h2 className="text-3xl font-bold leading-tight mb-4">Onboard New Team Member</h2>
             <p className="text-blue-100/80">Grant secure access to the policy management system and agent dashboard.</p>
@@ -126,7 +126,10 @@ const AddUser = () => {
               <Activity className="w-5 h-5 text-blue-300" />
               <span className="text-sm">Real-time status tracking</span>
             </div>
-            <p className="text-xs text-blue-200/60">© 2025 Insurance Management Systems</p>
+            
+       <p className="text-center text-slate-400 text-[10px] mt-8 uppercase tracking-[0.2em]">
+  &copy; {new Date().getFullYear()} Bright Cover Agency. All rights reserved.
+</p>
           </div>
         </div>
 

@@ -1068,6 +1068,33 @@ app.post("/api/policies/broadcast", async (req, res) => {
     res.status(500).json({ error: "Critical broadcast failure: " + err.message });
   }
 });
+// import policies cvs 
+app.post("/policies/import", isAdmin, async (req, res) => {
+  const { policies } = req.body;
+
+  try {
+    for (const p of policies) {
+      await query(
+        `INSERT INTO policies 
+        (plate, owner, company, start_date, expiry_date, contact)
+        VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          p.plate,
+          p.owner,
+          p.company,
+          p.start_date,
+          p.expiry_date,
+          p.contact,
+        ]
+      );
+    }
+
+    res.json({ success: true, count: policies.length });
+  } catch (err) {
+    res.status(500).json({ error: "Import failed" });
+  }
+});
+
 //===================== START SERVER ========================
 const PORT = process.env.PORT || 5000;
 app.listen(PORT,()=> console.log(`🚀 Server running on port ${PORT} `));

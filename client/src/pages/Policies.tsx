@@ -62,7 +62,7 @@ import {
   endOfDay 
 } from "date-fns";
 import { DateRange } from "react-day-picker";
- const { toast } = useToast(); // 
+ 
 axios.defaults.withCredentials = true;
 
 type Policy = {
@@ -100,7 +100,6 @@ const getStatusBadge = (status: string) => {
 
 const Policies = () => {
   const { toast } = useToast();
-
   /* ---------------- ROLE STATE ---------------- */
   const [userRole, setUserRole] = useState<string | null>(null);
 

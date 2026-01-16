@@ -7,7 +7,7 @@ import { Plus, Search, Download, Edit, Trash2, Eye, Calendar as CalendarIcon } f
 import { Car, User, Building2, CalendarDays, Phone, ClipboardPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import Papa from "papaparse";
+
 import {
   Select,
   SelectContent,
@@ -432,137 +432,119 @@ const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
   if (!file) return;
 
-  Papa.parse(file, {
-    header: true,
-    skipEmptyLines: true,
-    transformHeader: (h) => h.trim(),
-    complete: async (results) => {
-      try {
-        const parsedRows = results.data as Record<string, any>[];
-        const parsedFields = results.meta.fields || [];
-        if (!parsedFields || parsedFields.length === 0) {
-          toast({
-            title: "Import Failed",
-            description: "No headers found in CSV",
-            variant: "destructive",
-          });
-          return;
-        }
+  try {
+    // 1. Dynamically import PapaParse
+    const Papa = (await import("papaparse")).default;
 
-        const headerMap = mapHeaders(parsedFields);
-
-        // detect missing required header columns
-        const missingHeaders = Object.entries(headerMap)
-          .filter(([, v]) => !v)
-          .map(([k]) => k);
-        if (missingHeaders.length) {
-          // Allow user to proceed if they just want to rely on some defaults? For now, show helpful message.
-          toast({
-            title: "Invalid CSV structure",
-            description: `Missing headers: ${missingHeaders.join(", ")}. Accepted header names: Plate, Owner, Company, Start Date, Expiry Date, Contact.`,
-            variant: "destructive",
-          });
-          return;
-        }
-
-        const validPolicies: any[] = [];
-        const errors: string[] = [];
-
-        parsedRows.forEach((row, idx) => {
-          const rowNum = idx + 2; // account for header row
-          // Build canonical row using headerMap:
-          const plate = (row[headerMap.plate!] || "").toString().trim();
-          const owner = (row[headerMap.owner!] || "").toString().trim();
-          const company = (row[headerMap.company!] || "").toString().trim();
-          const startRaw = (row[headerMap.start_date!] || "").toString().trim();
-          const expiryRaw = (row[headerMap.expiry_date!] || "").toString().trim();
-          const contactRaw = (row[headerMap.contact!] || "").toString().trim();
-
-          const start_date = parseDateToISO(startRaw);
-          const expiry_date = parseDateToISO(expiryRaw);
-          const contact = normalizeContact(contactRaw);
-
-          const normalized = {
-            plate,
-            owner,
-            company,
-            start_date,
-            expiry_date,
-            contact,
-          };
-
-          const { valid, error } = validatePolicyRow(normalized, rowNum);
-          if (valid) {
-            validPolicies.push(normalized);
-          } else {
-            errors.push(error!);
-          }
-        });
-
-        if (validPolicies.length === 0) {
-          toast({
-            title: "Import Failed",
-            description: `No valid rows to import. ${errors.length} errors found.`,
-            variant: "destructive",
-          });
-          // optionally console.log(errors) for debugging
-          console.warn("CSV import errors:", errors);
-          return;
-        }
-
-        if (errors.length > 0) {
-          // Ask the user whether to continue importing valid rows
-          const proceed = window.confirm(
-            `Found ${errors.length} invalid row(s). ${validPolicies.length} valid row(s) will be imported. Continue? (OK = import valid rows, Cancel = abort)`
-          );
-          if (!proceed) {
-            // show a summary and stop
+    // 2. Proceed with parsing
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.trim(),
+      complete: async (results) => {
+        try {
+          const parsedRows = results.data as Record<string, any>[];
+          const parsedFields = results.meta.fields || [];
+          
+          if (!parsedFields || parsedFields.length === 0) {
             toast({
-              title: "Import Aborted",
-              description: `${errors.length} errors found. Import cancelled.`,
+              title: "Import Failed",
+              description: "No headers found in CSV",
               variant: "destructive",
             });
-            console.warn("CSV import errors:", errors);
             return;
           }
+
+          const headerMap = mapHeaders(parsedFields);
+
+          // Detect missing required header columns
+          const missingHeaders = Object.entries(headerMap)
+            .filter(([, v]) => !v)
+            .map(([k]) => k);
+
+          if (missingHeaders.length) {
+            toast({
+              title: "Invalid CSV structure",
+              description: `Missing headers: ${missingHeaders.join(", ")}.`,
+              variant: "destructive",
+            });
+            return;
+          }
+
+          const validPolicies: any[] = [];
+          const errors: string[] = [];
+
+          parsedRows.forEach((row, idx) => {
+            const rowNum = idx + 2; 
+            const plate = (row[headerMap.plate!] || "").toString().trim();
+            const owner = (row[headerMap.owner!] || "").toString().trim();
+            const company = (row[headerMap.company!] || "").toString().trim();
+            const startRaw = (row[headerMap.start_date!] || "").toString().trim();
+            const expiryRaw = (row[headerMap.expiry_date!] || "").toString().trim();
+            const contactRaw = (row[headerMap.contact!] || "").toString().trim();
+
+            const start_date = parseDateToISO(startRaw);
+            const expiry_date = parseDateToISO(expiryRaw);
+            const contact = normalizeContact(contactRaw);
+
+            const normalized = { plate, owner, company, start_date, expiry_date, contact };
+
+            const { valid, error } = validatePolicyRow(normalized, rowNum);
+            if (valid) {
+              validPolicies.push(normalized);
+            } else {
+              errors.push(error!);
+            }
+          });
+
+          if (validPolicies.length === 0) {
+            toast({
+              title: "Import Failed",
+              description: `No valid rows to import.`,
+              variant: "destructive",
+            });
+            return;
+          }
+
+          if (errors.length > 0) {
+            const proceed = window.confirm(
+              `Found ${errors.length} invalid row(s). ${validPolicies.length} valid row(s) will be imported. Continue?`
+            );
+            if (!proceed) return;
+          }
+
+          await axios.post(
+            `${API_URL}/import`,
+            { policies: validPolicies },
+            { headers: { "Content-Type": "application/json" } }
+          );
+
+          toast({
+            title: "Import Successful",
+            description: `${validPolicies.length} policies imported.`,
+          });
+
+          checkAuthAndFetch();
+        } catch (err) {
+          console.error("Processing error", err);
         }
-
-        // POST valid policies to server
-        await axios.post(
-          `${API_URL}/import`,
-          { policies: validPolicies },
-          { headers: { "Content-Type": "application/json" } }
-        );
-
-        toast({
-          title: "Import Successful",
-          description: `${validPolicies.length} policies imported${errors.length ? ` — ${errors.length} skipped` : ""}.`,
-        });
-
-        // show errors in console for admin debugging; you can enhance this to show modal with downloadable error CSV
-        if (errors.length) {
-          console.warn("CSV import errors (skipped rows):", errors);
-        }
-
-        checkAuthAndFetch();
-      } catch (err) {
-        console.error("Import error", err);
+      },
+      error: (err: any) => {
         toast({
           title: "Import Failed",
-          description: "An unexpected error occurred while importing.",
+          description: "Could not parse CSV file.",
           variant: "destructive",
         });
-      }
-    },
-    error: (err) => {
-      console.error("PapaParse error", err);
-      toast({
-        title: "Import Failed",
-        description: "Could not parse CSV file.",
-        variant: "destructive",
-      });
-    },
-  });
+      },
+    });
+  } catch (err) {
+    console.error("Failed to load PapaParse", err);
+    toast({
+      title: "Loading Error",
+      description: "Could not initialize the import tool. Please try again.",
+      variant: "destructive",
+    });
+  }
 };
   const exportToCSV = () => {
     const headers = ["Plate", "Owner", "Company", "Start Date", "Expiry Date", "Days Remaining", "Status", "Contact"];

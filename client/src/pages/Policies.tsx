@@ -7,6 +7,7 @@ import { Plus, Search, Download, Edit, Trash2, Eye, Calendar as CalendarIcon } f
 import { Car, User, Building2, CalendarDays, Phone, ClipboardPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import Papa from "papaparse";
 import {
   Select,
   SelectContent,
@@ -323,65 +324,246 @@ const Policies = () => {
       toast({ title: "Error", description: "Delete failed", variant: "destructive" });
     }
   };
-const normalizeDate = (value: string) => {
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return null;
-  return d.toISOString().split("T")[0]; // YYYY-MM-DD
+const HEADER_ALIASES: Record<string, string[]> = {
+  plate: ["plate", "plate number", "plate_no", "plate_no.", "plate#"],
+  owner: ["owner", "owner name", "name", "insured"],
+  company: ["company", "insurance company", "provider"],
+  start_date: ["start date", "start_date", "start", "startdate", "start-date"],
+  expiry_date: ["expiry date", "expiry_date", "expiry", "expirydate", "expiry-date", "end date"],
+  contact: ["contact", "contact number", "phone", "phone number", "telephone", "tel"],
 };
 
+const clean = (s: string | undefined) =>
+  (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const mapHeaders = (parsedFields: string[] = []) => {
+  const map: Record<string, string | null> = {
+    plate: null,
+    owner: null,
+    company: null,
+    start_date: null,
+    expiry_date: null,
+    contact: null,
+  };
+
+  const cleanedToOriginal: Record<string, string> = {};
+  parsedFields.forEach((f) => (cleanedToOriginal[clean(f)] = f));
+
+  Object.entries(HEADER_ALIASES).forEach(([canonical, aliases]) => {
+    for (const alias of aliases) {
+      const target = cleanedToOriginal[clean(alias)];
+      if (target) {
+        map[canonical] = target;
+        break;
+      }
+    }
+  });
+
+  return map;
+};
+
+const parseDateToISO = (value: string | undefined): string | null => {
+  if (!value) return null;
+  const v = value.trim();
+  // ISO-like first
+  const iso = new Date(v);
+  if (!isNaN(iso.getTime())) {
+    return iso.toISOString().split("T")[0];
+  }
+  // dd/mm/yyyy or d/m/yyyy
+  const dmy = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmy) {
+    const [_, d, m, y] = dmy;
+    const dd = d.padStart(2, "0");
+    const mm = m.padStart(2, "0");
+    return `${y}-${mm}-${dd}`;
+  }
+  // yyyy/mm/dd or yyyy-mm-dd handled earlier, so fallback null
+  return null;
+};
+
+const normalizeContact = (value: string | undefined) => {
+  if (!value) return "";
+  let digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+
+  // If starts with country code like 250... and number length > 9, strip country code and prefix 0
+  if (digits.startsWith("250") && digits.length >= 11) {
+    const local = digits.slice(digits.length - 9); // last 9 digits
+    return "0" + local;
+  }
+
+  // If 9 digits (likely missing leading 0), add leading 0
+  if (digits.length === 9) return "0" + digits;
+
+  // If already has leading 0 and length 10, keep
+  if (digits.length === 10 && digits.startsWith("0")) return digits;
+
+  // If starts with country code with + (handled by removing non-digits) or other lengths, try to normalize to last 9 digits
+  if (digits.length > 10) {
+    const local = digits.slice(-9);
+    return "0" + local;
+  }
+
+  // fallback: return digits as-is
+  return digits;
+};
+
+// validate a normalized policy row; returns { valid, error }
+const validatePolicyRow = (r: any, rowNum: number) => {
+  const errors: string[] = [];
+
+  if (!r.plate || r.plate.trim() === "") errors.push("missing plate");
+  if (!r.owner || r.owner.trim() === "") errors.push("missing owner");
+  if (!r.company || r.company.trim() === "") errors.push("missing company");
+
+  if (!r.start_date) errors.push("invalid start date");
+  if (!r.expiry_date) errors.push("invalid expiry date");
+  if (!r.contact || r.contact.trim() === "") errors.push("missing contact");
+
+  return {
+    valid: errors.length === 0,
+    error: errors.length ? `Row ${rowNum}: ${errors.join(", ")}` : null,
+  };
+};
+
+// --- Updated handleImport using PapaParse ---
 const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
   if (!file) return;
+  const { toast } = useToast(); // if useToast is in-scope; otherwise reference existing toast
 
-  const reader = new FileReader();
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: (h) => h.trim(),
+    complete: async (results) => {
+      try {
+        const parsedRows = results.data as Record<string, any>[];
+        const parsedFields = results.meta.fields || [];
+        if (!parsedFields || parsedFields.length === 0) {
+          toast({
+            title: "Import Failed",
+            description: "No headers found in CSV",
+            variant: "destructive",
+          });
+          return;
+        }
 
-  reader.onload = async () => {
-    try {
-      const text = reader.result as string;
-      const lines = text.split("\n").filter(l => l.trim());
+        const headerMap = mapHeaders(parsedFields);
 
-      const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+        // detect missing required header columns
+        const missingHeaders = Object.entries(headerMap)
+          .filter(([, v]) => !v)
+          .map(([k]) => k);
+        if (missingHeaders.length) {
+          // Allow user to proceed if they just want to rely on some defaults? For now, show helpful message.
+          toast({
+            title: "Invalid CSV structure",
+            description: `Missing headers: ${missingHeaders.join(", ")}. Accepted header names: Plate, Owner, Company, Start Date, Expiry Date, Contact.`,
+            variant: "destructive",
+          });
+          return;
+        }
 
-      const policies = lines.slice(1).map(line => {
-        const values = line.split(",").map(v => v.trim());
+        const validPolicies: any[] = [];
+        const errors: string[] = [];
 
-        const row: any = {};
-        headers.forEach((h, i) => (row[h] = values[i]));
+        parsedRows.forEach((row, idx) => {
+          const rowNum = idx + 2; // account for header row
+          // Build canonical row using headerMap:
+          const plate = (row[headerMap.plate!] || "").toString().trim();
+          const owner = (row[headerMap.owner!] || "").toString().trim();
+          const company = (row[headerMap.company!] || "").toString().trim();
+          const startRaw = (row[headerMap.start_date!] || "").toString().trim();
+          const expiryRaw = (row[headerMap.expiry_date!] || "").toString().trim();
+          const contactRaw = (row[headerMap.contact!] || "").toString().trim();
 
-        return {
-          plate: row["plate"],
-          owner: row["owner"],
-          company: row["company"],
-          start_date: normalizeDate(row["start date"]),
-          expiry_date: normalizeDate(row["expiry date"]),
-          contact: row["contact"].startsWith("0")
-            ? row["contact"]
-            : "0" + row["contact"],
-        };
-      });
+          const start_date = parseDateToISO(startRaw);
+          const expiry_date = parseDateToISO(expiryRaw);
+          const contact = normalizeContact(contactRaw);
 
-      await axios.post(
-        `${API_URL}/import`,
-        { policies },
-        { headers: { "Content-Type": "application/json" } }
-      );
+          const normalized = {
+            plate,
+            owner,
+            company,
+            start_date,
+            expiry_date,
+            contact,
+          };
 
-      toast({
-        title: "Import Successful",
-        description: `${policies.length} policies imported`,
-      });
+          const { valid, error } = validatePolicyRow(normalized, rowNum);
+          if (valid) {
+            validPolicies.push(normalized);
+          } else {
+            errors.push(error!);
+          }
+        });
 
-      checkAuthAndFetch();
-    } catch (err) {
+        if (validPolicies.length === 0) {
+          toast({
+            title: "Import Failed",
+            description: `No valid rows to import. ${errors.length} errors found.`,
+            variant: "destructive",
+          });
+          // optionally console.log(errors) for debugging
+          console.warn("CSV import errors:", errors);
+          return;
+        }
+
+        if (errors.length > 0) {
+          // Ask the user whether to continue importing valid rows
+          const proceed = window.confirm(
+            `Found ${errors.length} invalid row(s). ${validPolicies.length} valid row(s) will be imported. Continue? (OK = import valid rows, Cancel = abort)`
+          );
+          if (!proceed) {
+            // show a summary and stop
+            toast({
+              title: "Import Aborted",
+              description: `${errors.length} errors found. Import cancelled.`,
+              variant: "destructive",
+            });
+            console.warn("CSV import errors:", errors);
+            return;
+          }
+        }
+
+        // POST valid policies to server
+        await axios.post(
+          `${API_URL}/import`,
+          { policies: validPolicies },
+          { headers: { "Content-Type": "application/json" } }
+        );
+
+        toast({
+          title: "Import Successful",
+          description: `${validPolicies.length} policies imported${errors.length ? ` — ${errors.length} skipped` : ""}.`,
+        });
+
+        // show errors in console for admin debugging; you can enhance this to show modal with downloadable error CSV
+        if (errors.length) {
+          console.warn("CSV import errors (skipped rows):", errors);
+        }
+
+        checkAuthAndFetch();
+      } catch (err) {
+        console.error("Import error", err);
+        toast({
+          title: "Import Failed",
+          description: "An unexpected error occurred while importing.",
+          variant: "destructive",
+        });
+      }
+    },
+    error: (err) => {
+      console.error("PapaParse error", err);
       toast({
         title: "Import Failed",
-        description: "Invalid CSV structure",
+        description: "Could not parse CSV file.",
         variant: "destructive",
       });
-    }
-  };
-
-  reader.readAsText(file);
+    },
+  });
 };
   const exportToCSV = () => {
     const headers = ["Plate", "Owner", "Company", "Start Date", "Expiry Date", "Days Remaining", "Status", "Contact"];

@@ -1023,14 +1023,11 @@ app.post("/api/policies/broadcast", async (req, res) => {
 });
 // import policies cvs 
 app.post("/policies/import", isAdmin, async (req, res) => {
-  console.log("IMPORT BODY:", req.body);
-
   const { policies } = req.body;
 
-  // 1️⃣ Validate payload
   if (!Array.isArray(policies) || policies.length === 0) {
     return res.status(400).json({
-      error: "Invalid format: policies must be a non-empty array"
+      error: "Invalid format: policies must be a non-empty array",
     });
   }
 
@@ -1040,26 +1037,27 @@ app.post("/policies/import", isAdmin, async (req, res) => {
     await connection.beginTransaction();
 
     let inserted = 0;
+    let skipped = 0;
 
     for (const [index, p] of policies.entries()) {
-      const {
-        plate,
-        owner,
-        company,
-        start_date,
-        expiry_date,
-        contact
-      } = p;
+      const { plate, owner, company, start_date, expiry_date, contact } = p;
 
-      // 2️⃣ Row validation
       if (!plate || !owner || !company || !start_date || !expiry_date || !contact) {
         throw new Error(`Row ${index + 1}: Missing required fields`);
       }
 
-      // 3️⃣ Normalize values
-      const normalizedCompany = company.trim().toUpperCase();
-      const normalizedContact = String(contact).trim();
+      // 🔍 1️⃣ CHECK IF POLICY EXISTS
+      const [existing] = await connection.query(
+        `SELECT id FROM policies WHERE plate = ? OR contact = ? LIMIT 1`,
+        [plate.trim(), String(contact).trim()]
+      );
 
+      if (existing.length > 0) {
+        skipped++;
+        continue; // ⏭️ Skip this record
+      }
+
+      // 2️⃣ INSERT NEW POLICY
       await connection.query(
         `INSERT INTO policies 
          (plate, owner, company, start_date, expiry_date, contact)
@@ -1067,10 +1065,10 @@ app.post("/policies/import", isAdmin, async (req, res) => {
         [
           plate.trim(),
           owner.trim(),
-          normalizedCompany,
+          company.trim().toUpperCase(),
           start_date,
           expiry_date,
-          normalizedContact
+          String(contact).trim(),
         ]
       );
 
@@ -1081,19 +1079,19 @@ app.post("/policies/import", isAdmin, async (req, res) => {
 
     res.json({
       success: true,
-      count: inserted
+      inserted,
+      skipped,
+      total: policies.length,
     });
 
   } catch (err) {
     await connection.rollback();
-
-    res.status(400).json({
-      error: err.message || "Import failed due to invalid data"
-    });
+    res.status(400).json({ error: err.message });
   } finally {
     connection.release();
   }
 });
+
 
 //===================== START SERVER ========================
 const PORT = process.env.PORT || 5000;

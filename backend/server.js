@@ -1022,7 +1022,7 @@ app.post("/api/policies/broadcast", async (req, res) => {
   }
 });
 // import policies cvs 
-app.post("/policies/import", isAdmin, async (req, res) => {
+app.post("/policies/import", async (req, res) => {
   const { policies } = req.body;
 
   if (!Array.isArray(policies) || policies.length === 0) {
@@ -1046,7 +1046,7 @@ app.post("/policies/import", isAdmin, async (req, res) => {
         throw new Error(`Row ${index + 1}: Missing required fields`);
       }
 
-      // 🔍 1️⃣ CHECK IF POLICY EXISTS
+      // 🔍 Check if policy already exists (plate OR contact)
       const [existing] = await connection.query(
         `SELECT id FROM policies WHERE plate = ? OR contact = ? LIMIT 1`,
         [plate.trim(), String(contact).trim()]
@@ -1054,10 +1054,10 @@ app.post("/policies/import", isAdmin, async (req, res) => {
 
       if (existing.length > 0) {
         skipped++;
-        continue; // ⏭️ Skip this record
+        continue; // ⏭️ Skip duplicates
       }
 
-      // 2️⃣ INSERT NEW POLICY
+      // ➕ Insert new policy
       await connection.query(
         `INSERT INTO policies 
          (plate, owner, company, start_date, expiry_date, contact)

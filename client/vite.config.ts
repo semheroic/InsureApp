@@ -3,7 +3,6 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 
-// https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
@@ -15,25 +14,21 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  /* --- ADD THIS BUILD SECTION --- */
+  /* --- ADD THIS SECTION --- */
   build: {
     rollupOptions: {
       output: {
-        // This takes heavy libraries out of index.js and into their own chunks
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-ui': [
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-popover',
-            '@radix-ui/react-select',
-            '@radix-ui/react-toast',
-            'lucide-react'
-          ],
-          'vendor-utils': ['axios', 'date-fns'],
+        manualChunks(id) {
+          // Move all node_modules into a separate vendor chunk
+          if (id.includes('node_modules')) {
+            if (id.includes('react')) return 'vendor-react';
+            if (id.includes('lucide-react')) return 'vendor-icons';
+            if (id.includes('@radix-ui')) return 'vendor-ui';
+            return 'vendor-libs';
+          }
         },
       },
     },
-    // Increases the warning limit slightly since you're managing chunks now
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 1000, // Increase limit to 1MB after splitting
   },
 }));

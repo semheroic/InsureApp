@@ -3,8 +3,7 @@ import axios from "axios";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Download, Edit, Trash2, Eye, Calendar as CalendarIcon } from "lucide-react";
-import { Car, User, Building2, CalendarDays, Phone, ClipboardPlus } from "lucide-react";
+import { Plus, Search, Download, Edit, Trash2, Eye, Calendar as CalendarIcon, Car, User, Building2, Phone, ClipboardPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
 import {
   Dialog,
   DialogContent,
@@ -23,6 +23,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+
 import {
   AlertDialog,
   AlertDialogContent,
@@ -33,14 +34,17 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+
 import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+
 import {
   Table,
   TableHeader,
@@ -49,6 +53,7 @@ import {
   TableBody,
   TableCell,
 } from "@/components/ui/table";
+
 import { 
   format, 
   isSameDay, 
@@ -61,8 +66,9 @@ import {
   startOfDay, 
   endOfDay 
 } from "date-fns";
+
 import { DateRange } from "react-day-picker";
- 
+
 axios.defaults.withCredentials = true;
 
 type Policy = {
@@ -98,142 +104,134 @@ const getStatusBadge = (status: string) => {
   return variants[status] || "";
 };
 
+const validateRWPhone = (phone: string) => /^(\+?250|0)?(7[2389])[0-9]{7}$/.test(phone);
+
+const parseDateToISO = (value: string | undefined): string | null => {
+  if (!value) return null;
+  const v = value.trim();
+  const iso = new Date(v);
+  if (!isNaN(iso.getTime())) return iso.toISOString().split("T")[0];
+
+  const dmy = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmy) {
+    const [_, d, m, y] = dmy;
+    const dd = d.padStart(2, "0");
+    const mm = m.padStart(2, "0");
+    return `${y}-${mm}-${dd}`;
+  }
+  return null;
+};
+
+const normalizeContact = (value: string | undefined) => {
+  if (!value) return "";
+  let digits = value.replace(/\D/g, "");
+  if (digits.startsWith("250") && digits.length >= 11) digits = "0" + digits.slice(-9);
+  if (digits.length === 9) digits = "0" + digits;
+  if (digits.length === 10 && digits.startsWith("0")) return digits;
+  if (digits.length > 10) digits = "0" + digits.slice(-9);
+  return digits;
+};
+
+/* ---------------- CSV IMPORT ---------------- */
+const importCSV = async (file: File) => {
+  const text = await file.text();
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return { policies: [], errors: ["Empty CSV"] };
+
+  const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+  const expected = ["plate", "owner", "company", "start_date", "expiry_date", "contact"];
+  const missingHeaders = expected.filter(h => !headers.includes(h));
+  if (missingHeaders.length) return { policies: [], errors: [`Missing headers: ${missingHeaders.join(", ")}`] };
+
+  const policies: any[] = [];
+  const errors: string[] = [];
+
+  lines.slice(1).forEach((line, idx) => {
+    const row: Record<string, string> = {};
+    line.split(",").forEach((v, i) => row[headers[i]] = v?.trim());
+    const start_date = parseDateToISO(row.start_date);
+    const expiry_date = parseDateToISO(row.expiry_date);
+    const contact = normalizeContact(row.contact);
+
+    const missing = expected.filter(k => !row[k] || row[k].trim() === "");
+    if (!start_date) missing.push("start_date");
+    if (!expiry_date) missing.push("expiry_date");
+
+    if (missing.length) errors.push(`Row ${idx + 2}: missing ${missing.join(", ")}`);
+    else policies.push({ ...row, start_date, expiry_date, contact, status: "Active", days_remaining: daysBetween(expiry_date) });
+  });
+
+  return { policies, errors };
+};
+
+/* ---------------- MAIN COMPONENT ---------------- */
 const Policies = () => {
   const { toast } = useToast();
-  /* ---------------- ROLE STATE ---------------- */
-  const [userRole, setUserRole] = useState<string | null>(null);
 
-  /* ---------------- COMPONENT STATES ---------------- */
+  /* ---------------- STATES ---------------- */
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [companyFilter, setCompanyFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: undefined,
-    to: undefined,
-  });
-  
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({ from: undefined, to: undefined });
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
   const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
-  const [formData, setFormData] = useState({
-    plate: "",
-    owner: "",
-    company: "SORAS",
-    startDate: "",
-    expiryDate: "",
-    contact: "",
-  });
-
-  const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
-  const [bulkMessage, setBulkMessage] = useState("");
-  const [isSending, setIsSending] = useState(false);
+  const [formData, setFormData] = useState({ plate: "", owner: "", company: "SORAS", startDate: "", expiryDate: "", contact: "" });
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState("");
+  const [isSending, setIsSending] = useState(false);
 
   const roleClean = userRole?.toLowerCase();
   const isAdmin = roleClean === "admin";
   const isManager = roleClean === "manager";
   const canModify = isAdmin || isManager;
 
-  /* ---------------- AUTH & FETCH ---------------- */
+  /* ---------------- FETCH ---------------- */
   const checkAuthAndFetch = async () => {
     setLoading(true);
     try {
       const authRes = await axios.get(AUTH_URL);
       setUserRole(authRes.data.role);
-
       const { data } = await axios.get(API_URL);
-      setPolicies(
-        data.map((p: any) => ({
-          ...p,
-          days_remaining: daysBetween(p.expiry_date),
-          status: p.status,
-        }))
-      );
+      setPolicies(data.map((p: any) => ({ ...p, days_remaining: daysBetween(p.expiry_date) })));
     } catch (err: any) {
-      toast({
-        title: "Error",
-        description: err.response?.status === 401 ? "Please login again" : "Failed to load data",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: err.response?.status === 401 ? "Please login again" : "Failed to load data", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    checkAuthAndFetch();
-  }, []);
+  useEffect(() => { checkAuthAndFetch(); }, []);
 
-  /* ---------------- DYNAMIC COUNTS CALCULATION ---------------- */
-  const counts = useMemo(() => {
-    const today = new Date();
-    return {
-      all: policies.length,
-      active: policies.filter(p => p.status === "Active").length,
-      expiring: policies.filter(p => p.status === "Expiring Soon").length,
-      expired: policies.filter(p => p.status === "Expired").length,
-      renewed: policies.filter(p => p.status === "Renewed").length,
-      soras: policies.filter(p => p.company.toLowerCase() === "soras").length,
-      sonarwa: policies.filter(p => p.company.toLowerCase() === "sonarwa").length,
-      prime: policies.filter(p => p.company.toLowerCase() === "prime").length,
-      radiant: policies.filter(p => p.company.toLowerCase() === "radiant").length,
-      today: policies.filter(p => isSameDay(parseISO(p.start_date), today)).length,
-      weekly: policies.filter(p => isWithinInterval(parseISO(p.start_date), { start: startOfWeek(today), end: endOfWeek(today) })).length,
-      monthly: policies.filter(p => isWithinInterval(parseISO(p.start_date), { start: startOfMonth(today), end: endOfMonth(today) })).length,
-    };
-  }, [policies]);
-
-  /* ---------------- SMART FILTERS ---------------- */
+  /* ---------------- FILTERS & PAGINATION ---------------- */
   const filteredPolicies = useMemo(() => {
-    return policies.filter((p) => {
+    return policies.filter(p => {
       const pDate = parseISO(p.start_date);
       const today = new Date();
       const searchLower = searchQuery.toLowerCase().trim();
-
-      let matchesSearch = true;
-      if (dateRange?.from && dateRange?.to) {
-        matchesSearch = isWithinInterval(pDate, { 
-            start: startOfDay(dateRange.from), 
-            end: endOfDay(dateRange.to) 
-        });
-      } else if (searchQuery) {
-        matchesSearch =
-          p.plate.toLowerCase().includes(searchLower) ||
-          p.owner.toLowerCase().includes(searchLower) ||
-          p.company.toLowerCase().includes(searchLower);
-      }
-
-      const matchesStatus =
-        statusFilter === "all" ||
-        p.status.toLowerCase().replace(/\s+/g, "") === statusFilter;
-
-      const matchesCompany =
-        companyFilter === "all" || p.company.toLowerCase() === companyFilter;
-
+      let matchesSearch = !searchQuery || [p.plate, p.owner, p.company].some(v => v.toLowerCase().includes(searchLower));
+      let matchesStatus = statusFilter === "all" || p.status.toLowerCase().replace(/\s+/g, "") === statusFilter;
+      let matchesCompany = companyFilter === "all" || p.company.toLowerCase() === companyFilter;
       let matchesQuickDate = true;
-      if (dateFilter === "today") {
-        matchesQuickDate = isSameDay(pDate, today);
-      } else if (dateFilter === "weekly") {
-        matchesQuickDate = isWithinInterval(pDate, {
-          start: startOfWeek(today),
-          end: endOfWeek(today),
-        });
-      } else if (dateFilter === "monthly") {
-        matchesQuickDate = isWithinInterval(pDate, {
-          start: startOfMonth(today),
-          end: endOfMonth(today),
-        });
-      }
+      if (dateFilter === "today") matchesQuickDate = isSameDay(pDate, today);
+      else if (dateFilter === "weekly") matchesQuickDate = isWithinInterval(pDate, { start: startOfWeek(today), end: endOfWeek(today) });
+      else if (dateFilter === "monthly") matchesQuickDate = isWithinInterval(pDate, { start: startOfMonth(today), end: endOfMonth(today) });
 
-      return matchesSearch && matchesStatus && matchesCompany && matchesQuickDate;
+      let matchesRange = true;
+      if (dateRange?.from && dateRange?.to) matchesRange = isWithinInterval(pDate, { start: startOfDay(dateRange.from), end: endOfDay(dateRange.to) });
+
+      return matchesSearch && matchesStatus && matchesCompany && matchesQuickDate && matchesRange;
     });
   }, [policies, searchQuery, statusFilter, companyFilter, dateFilter, dateRange]);
 
@@ -242,39 +240,9 @@ const Policies = () => {
     return filteredPolicies.slice(start, start + itemsPerPage);
   }, [filteredPolicies, currentPage]);
 
-  const validateRWPhone = (phone: string) => {
-    const regex = /^(\+?250|0)?(7[2389])[0-9]{7}$/;
-    return regex.test(phone);
-  };
-
-  /* ---------------- ACTIONS ---------------- */
-  const handleSendMessage = async () => {
-    setIsSending(true);
-    try {
-      const payload = {
-        template: bulkMessage,
-        recipients: filteredPolicies.map(p => ({
-          contact: p.contact,
-          owner: p.owner,
-          plate: p.plate,
-          days: p.days_remaining
-        }))
-      };
-      const { data } = await axios.post(`${BASE}/policies/broadcast`, payload);
-      toast({ title: "Broadcast Complete", description: `Sent ${data.summary.successful} messages.` });
-      setIsMessageDialogOpen(false);
-      setBulkMessage("");
-    } catch {
-      toast({ title: "Error", description: "Failed to send broadcast", variant: "destructive" });
-    } finally {
-      setIsSending(false);
-    }
-  };
-
+  /* ---------------- CRUD HANDLERS ---------------- */
   const handleAdd = async () => {
-    if (!validateRWPhone(formData.contact)) {
-      return toast({ title: "Invalid Phone", description: "Use Rwandan format (078...)", variant: "destructive" });
-    }
+    if (!validateRWPhone(formData.contact)) return toast({ title: "Invalid Phone", description: "Use Rwandan format (078...)", variant: "destructive" });
     try {
       await axios.post(API_URL, {
         plate: formData.plate,
@@ -288,22 +256,15 @@ const Policies = () => {
       setIsAddDialogOpen(false);
       toast({ title: "Added", description: "Policy created" });
       setFormData({ plate: "", owner: "", company: "SORAS", startDate: "", expiryDate: "", contact: "" });
-    } catch (error: any) {
-      toast({ title: "Error", description: error.response?.data?.error || "Failed to add", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to add policy", variant: "destructive" });
     }
   };
 
   const handleEdit = async () => {
     if (!selectedPolicy) return;
     try {
-      await axios.put(`${API_URL}/${selectedPolicy.id}`, {
-        plate: formData.plate,
-        owner: formData.owner,
-        company: formData.company,
-        start_date: formData.startDate,
-        expiry_date: formData.expiryDate,
-        contact: formData.contact,
-      });
+      await axios.put(`${API_URL}/${selectedPolicy.id}`, { ...formData, start_date: formData.startDate, expiry_date: formData.expiryDate });
       checkAuthAndFetch();
       setIsEditDialogOpen(false);
       toast({ title: "Updated", description: "Policy saved" });
@@ -323,238 +284,51 @@ const Policies = () => {
       toast({ title: "Error", description: "Delete failed", variant: "destructive" });
     }
   };
-const HEADER_ALIASES: Record<string, string[]> = {
-  plate: ["plate", "plate number", "plate_no", "plate_no.", "plate#"],
-  owner: ["owner", "owner name", "name", "insured"],
-  company: ["company", "insurance company", "provider"],
-  start_date: ["start date", "start_date", "start", "startdate", "start-date"],
-  expiry_date: ["expiry date", "expiry_date", "expiry", "expirydate", "expiry-date", "end date"],
-  contact: ["contact", "contact number", "phone", "phone number", "telephone", "tel"],
-};
 
-const clean = (s: string | undefined) =>
-  (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-
-const mapHeaders = (parsedFields: string[] = []) => {
-  const map: Record<string, string | null> = {
-    plate: null,
-    owner: null,
-    company: null,
-    start_date: null,
-    expiry_date: null,
-    contact: null,
+  /* ---------------- BROADCAST ---------------- */
+  const handleSendMessage = async () => {
+    setIsSending(true);
+    try {
+      const payload = {
+        template: bulkMessage,
+        recipients: filteredPolicies.map(p => ({ contact: p.contact, owner: p.owner, plate: p.plate, days: p.days_remaining }))
+      };
+      await axios.post(`${BASE}/policies/broadcast`, payload);
+      toast({ title: "Broadcast Complete", description: `Sent messages.` });
+      setIsMessageDialogOpen(false);
+      setBulkMessage("");
+    } catch {
+      toast({ title: "Error", description: "Failed to send broadcast", variant: "destructive" });
+    } finally { setIsSending(false); }
   };
 
-  const cleanedToOriginal: Record<string, string> = {};
-  parsedFields.forEach((f) => (cleanedToOriginal[clean(f)] = f));
-
-  Object.entries(HEADER_ALIASES).forEach(([canonical, aliases]) => {
-    for (const alias of aliases) {
-      const target = cleanedToOriginal[clean(alias)];
-      if (target) {
-        map[canonical] = target;
-        break;
-      }
-    }
-  });
-
-  return map;
-};
-
-const parseDateToISO = (value: string | undefined): string | null => {
-  if (!value) return null;
-  const v = value.trim();
-  // ISO-like first
-  const iso = new Date(v);
-  if (!isNaN(iso.getTime())) {
-    return iso.toISOString().split("T")[0];
-  }
-  // dd/mm/yyyy or d/m/yyyy
-  const dmy = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if (dmy) {
-    const [_, d, m, y] = dmy;
-    const dd = d.padStart(2, "0");
-    const mm = m.padStart(2, "0");
-    return `${y}-${mm}-${dd}`;
-  }
-  // yyyy/mm/dd or yyyy-mm-dd handled earlier, so fallback null
-  return null;
-};
-
-const normalizeContact = (value: string | undefined) => {
-  if (!value) return "";
-  let digits = value.replace(/\D/g, "");
-  if (!digits) return "";
-
-  // If starts with country code like 250... and number length > 9, strip country code and prefix 0
-  if (digits.startsWith("250") && digits.length >= 11) {
-    const local = digits.slice(digits.length - 9); // last 9 digits
-    return "0" + local;
-  }
-
-  // If 9 digits (likely missing leading 0), add leading 0
-  if (digits.length === 9) return "0" + digits;
-
-  // If already has leading 0 and length 10, keep
-  if (digits.length === 10 && digits.startsWith("0")) return digits;
-
-  // If starts with country code with + (handled by removing non-digits) or other lengths, try to normalize to last 9 digits
-  if (digits.length > 10) {
-    const local = digits.slice(-9);
-    return "0" + local;
-  }
-
-  // fallback: return digits as-is
-  return digits;
-};
-
-// validate a normalized policy row; returns { valid, error }
-const validatePolicyRow = (r: any, rowNum: number) => {
-  const errors: string[] = [];
-
-  if (!r.plate || r.plate.trim() === "") errors.push("missing plate");
-  if (!r.owner || r.owner.trim() === "") errors.push("missing owner");
-  if (!r.company || r.company.trim() === "") errors.push("missing company");
-
-  if (!r.start_date) errors.push("invalid start date");
-  if (!r.expiry_date) errors.push("invalid expiry date");
-  if (!r.contact || r.contact.trim() === "") errors.push("missing contact");
-
-  return {
-    valid: errors.length === 0,
-    error: errors.length ? `Row ${rowNum}: ${errors.join(", ")}` : null,
-  };
-};
-
-// --- Updated handleImport using PapaParse ---
-const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-
-  try {
-    // 1. Dynamically import PapaParse
-    const Papa = (await import("papaparse")).default;
-
-    // 2. Proceed with parsing
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (h) => h.trim(),
-      complete: async (results) => {
-        try {
-          const parsedRows = results.data as Record<string, any>[];
-          const parsedFields = results.meta.fields || [];
-          
-          if (!parsedFields || parsedFields.length === 0) {
-            toast({
-              title: "Import Failed",
-              description: "No headers found in CSV",
-              variant: "destructive",
-            });
-            return;
-          }
-
-          const headerMap = mapHeaders(parsedFields);
-
-          // Detect missing required header columns
-          const missingHeaders = Object.entries(headerMap)
-            .filter(([, v]) => !v)
-            .map(([k]) => k);
-
-          if (missingHeaders.length) {
-            toast({
-              title: "Invalid CSV structure",
-              description: `Missing headers: ${missingHeaders.join(", ")}.`,
-              variant: "destructive",
-            });
-            return;
-          }
-
-          const validPolicies: any[] = [];
-          const errors: string[] = [];
-
-          parsedRows.forEach((row, idx) => {
-            const rowNum = idx + 2; 
-            const plate = (row[headerMap.plate!] || "").toString().trim();
-            const owner = (row[headerMap.owner!] || "").toString().trim();
-            const company = (row[headerMap.company!] || "").toString().trim();
-            const startRaw = (row[headerMap.start_date!] || "").toString().trim();
-            const expiryRaw = (row[headerMap.expiry_date!] || "").toString().trim();
-            const contactRaw = (row[headerMap.contact!] || "").toString().trim();
-
-            const start_date = parseDateToISO(startRaw);
-            const expiry_date = parseDateToISO(expiryRaw);
-            const contact = normalizeContact(contactRaw);
-
-            const normalized = { plate, owner, company, start_date, expiry_date, contact };
-
-            const { valid, error } = validatePolicyRow(normalized, rowNum);
-            if (valid) {
-              validPolicies.push(normalized);
-            } else {
-              errors.push(error!);
-            }
-          });
-
-          if (validPolicies.length === 0) {
-            toast({
-              title: "Import Failed",
-              description: `No valid rows to import.`,
-              variant: "destructive",
-            });
-            return;
-          }
-
-          if (errors.length > 0) {
-            const proceed = window.confirm(
-              `Found ${errors.length} invalid row(s). ${validPolicies.length} valid row(s) will be imported. Continue?`
-            );
-            if (!proceed) return;
-          }
-
-          await axios.post(
-            `${API_URL}/import`,
-            { policies: validPolicies },
-            { headers: { "Content-Type": "application/json" } }
-          );
-
-          toast({
-            title: "Import Successful",
-            description: `${validPolicies.length} policies imported.`,
-          });
-
-          checkAuthAndFetch();
-        } catch (err) {
-          console.error("Processing error", err);
-        }
-      },
-      error: (err: any) => {
-        toast({
-          title: "Import Failed",
-          description: "Could not parse CSV file.",
-          variant: "destructive",
-        });
-      },
-    });
-  } catch (err) {
-    console.error("Failed to load PapaParse", err);
-    toast({
-      title: "Loading Error",
-      description: "Could not initialize the import tool. Please try again.",
-      variant: "destructive",
-    });
-  }
-};
+  /* ---------------- EXPORT ---------------- */
   const exportToCSV = () => {
-    const headers = ["Plate", "Owner", "Company", "Start Date", "Expiry Date", "Days Remaining", "Status", "Contact"];
-    const rows = filteredPolicies.map((p) => [p.plate, p.owner, p.company, p.start_date, p.expiry_date, p.days_remaining, p.status, p.contact]);
-    const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
+    const headers = ["Plate","Owner","Company","Start Date","Expiry Date","Days Remaining","Status","Contact"];
+    const rows = filteredPolicies.map(p => [p.plate,p.owner,p.company,p.start_date,p.expiry_date,p.days_remaining,p.status,p.contact]);
+    const csv = [headers,...rows].map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `policies_export_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.download = `policies_export_${format(new Date(),'yyyy-MM-dd')}.csv`;
     a.click();
+  };
+
+  /* ---------------- IMPORT HANDLER ---------------- */
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const { policies: imported, errors } = await importCSV(file);
+    if (errors.length) {
+      const proceed = window.confirm(`${errors.length} errors found. ${imported.length} valid rows will be imported. Continue?`);
+      if (!proceed) return;
+    }
+    if (imported.length) {
+      await axios.post(`${API_URL}/import`, { policies: imported });
+      toast({ title: "Import Successful", description: `${imported.length} policies imported.` });
+      checkAuthAndFetch();
+    }
   };
 
   if (loading) return <p className="text-center py-20 text-muted-foreground animate-pulse">Synchronizing policies...</p>;

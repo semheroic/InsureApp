@@ -1,11 +1,10 @@
 export interface Policy {
-  id: number;                  // include ID for follow-up & actions
   plate: string;
   owner: string;
   company: string;
   expiryDate: string;
   contact: string;
-  daysOverdue?: number;         // for expired policies
+  daysOverdue?: number;
 }
 
 export interface ExpiryData {

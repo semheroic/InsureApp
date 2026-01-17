@@ -240,6 +240,66 @@ const Policies = () => {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredPolicies.slice(start, start + itemsPerPage);
   }, [filteredPolicies, currentPage]);
+const counts = useMemo(() => {
+  const today = new Date();
+
+  const byStatus = {
+    active: 0,
+    expiring: 0,
+    expired: 0,
+    renewed: 0,
+  };
+
+  const byCompany = {
+    soras: 0,
+    sonarwa: 0,
+    prime: 0,
+    radiant: 0,
+  };
+
+  let todayCount = 0;
+  let weeklyCount = 0;
+  let monthlyCount = 0;
+
+  policies.forEach((p) => {
+    const start = parseISO(p.start_date);
+
+    // ----- Date filters -----
+    if (isSameDay(start, today)) todayCount++;
+    if (isWithinInterval(start, { start: startOfWeek(today), end: endOfWeek(today) })) weeklyCount++;
+    if (isWithinInterval(start, { start: startOfMonth(today), end: endOfMonth(today) })) monthlyCount++;
+
+    // ----- Status -----
+    if (p.status === "Active") byStatus.active++;
+    else if (p.status === "Expiring Soon") byStatus.expiring++;
+    else if (p.status === "Expired") byStatus.expired++;
+    else if (p.status === "Renewed") byStatus.renewed++;
+
+    // ----- Company -----
+    const company = p.company.toLowerCase();
+    if (company in byCompany) {
+      byCompany[company as keyof typeof byCompany]++;
+    }
+  });
+
+  return {
+    all: policies.length,
+
+    today: todayCount,
+    weekly: weeklyCount,
+    monthly: monthlyCount,
+
+    active: byStatus.active,
+    expiring: byStatus.expiring,
+    expired: byStatus.expired,
+    renewed: byStatus.renewed,
+
+    soras: byCompany.soras,
+    sonarwa: byCompany.sonarwa,
+    prime: byCompany.prime,
+    radiant: byCompany.radiant,
+  };
+}, [policies]);
 
   /* ---------------- CRUD HANDLERS ---------------- */
   const handleAdd = async () => {

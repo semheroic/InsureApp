@@ -27,9 +27,23 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 // ======================== MIDDLEWARE ========================
+const allowedOrigins = [
+  "https://insure-app-olive.vercel.app",
+  "http://localhost:8080"
+];
+
 app.use(cors({
-  origin: "https://insure-app-olive.vercel.app", // <-- must be a string
-  credentials: true // required if using cookies/sessions
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
 }));
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -69,6 +83,8 @@ const sessionStore = new MySQLStore(
   },
   db
 );
+
+
 app.set("trust proxy", 1); 
 
 app.use(session({
@@ -78,11 +94,12 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    maxAge: 1000 * 60 * 60 * 8,
+    maxAge: 1000 * 60 * 60 * 8, // 8 hours
     httpOnly: true,
-    // Change this part to be more robust:
-    secure: true, 
-    sameSite: "none"
+    // Only use secure cookies in production (HTTPS)
+    secure: isProduction, 
+    // Use 'none' for cross-site (Production), 'lax' for same-site (Localhost)
+    sameSite: isProduction ? "none" : "lax"
   }
 }));
 
@@ -261,6 +278,20 @@ await query(`
     KEY policy_id (policy_id)
   ) ENGINE=InnoDB
 `);
+await query(`
+  CREATE TABLE IF NOT EXISTS advertisements (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    company_name VARCHAR(255) NOT NULL,
+    ad_type ENUM('image','text','video') DEFAULT 'text',
+    media_url TEXT,
+    title VARCHAR(255),
+    cta_text VARCHAR(100),
+    target_url TEXT,
+    is_active TINYINT(1) DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
 
   console.log("✅ Tables ensured");
 }
@@ -644,34 +675,31 @@ app.get("/policies/:id", async (req, res) => {
 });
 
 // POST: Create a new policy
-app.post("/policies",async (req, res) => {
+app.post("/policies", async (req, res) => {
   try {
     const { plate, owner, company, start_date, expiry_date, contact } = req.body;
 
+    // Validate required fields
     if (!plate || !owner || !company || !start_date || !expiry_date || !contact) {
-      return res.status(400).json({ error: "All fields required" });
+      return res.status(400).json({ error: "All fields are required" });
     }
 
-    // 1. Check if the contact number already exists in policies
-    const existing = await query("SELECT id FROM policies WHERE contact = ?", [contact]);
-    if (existing.length > 0) {
-      return res.status(400).json({ error: "Phone number is already associated with an active policy." });
-    }
-
-    // 2. Insert new policy
+    // Insert new policy directly without checking for duplicate contact
     const result = await query(
       "INSERT INTO policies (plate, owner, company, start_date, expiry_date, contact) VALUES (?,?,?,?,?,?)",
       [plate, owner, company, start_date, expiry_date, contact]
     );
 
+    // Optional: send SMS notification
     sendSMS(contact, `Your insurance policy for ${plate} runs from ${start_date} to ${expiry_date}.`)
       .catch(console.error);
 
-    res.status(201).json({ id: result.insertId });
+    res.status(201).json({ id: result.insertId, message: "Policy created successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // PUT: Renew policy and log history
 
@@ -1027,69 +1055,193 @@ app.post("/policies/import", async (req, res) => {
   const { policies } = req.body;
 
   if (!Array.isArray(policies) || policies.length === 0) {
-    return res.status(400).json({
-      error: "Invalid format: policies must be a non-empty array",
+    return res.status(400).json({ 
+      success: false, 
+      message: "You must upload at least one policy." 
     });
   }
 
-  const connection = await db.promise().getConnection();
+  const insertedRows = [];
+  const skippedRows = [];
 
-  try {
-    await connection.beginTransaction();
+  for (let i = 0; i < policies.length; i++) {
+    try {
+      let { plate, owner, company, start_date, expiry_date, contact } = policies[i];
 
-    let inserted = 0;
-    let skipped = 0;
+      const cleanPlate = plate?.trim();
+      const cleanOwner = owner?.trim();
+      const cleanCompany = company?.trim().toUpperCase();
+      const cleanContact = formatRwandaNumber(contact); // your helper
 
-    for (const [index, p] of policies.entries()) {
-      const { plate, owner, company, start_date, expiry_date, contact } = p;
+      // ----- Validate required fields -----
+      const missingFields = [];
+      if (!cleanPlate) missingFields.push("plate");
+      if (!cleanOwner) missingFields.push("owner");
+      if (!cleanCompany) missingFields.push("company");
+      if (!start_date) missingFields.push("start_date");
+      if (!expiry_date) missingFields.push("expiry_date");
+      if (!cleanContact) missingFields.push("contact");
 
-      if (!plate || !owner || !company || !start_date || !expiry_date || !contact) {
-        throw new Error(`Row ${index + 1}: Missing required fields`);
-      }
-
-      // Check if policy exists
-      const [existing] = await connection.query(
-        `SELECT id FROM policies WHERE plate = ? OR contact = ? LIMIT 1`,
-        [plate.trim(), String(contact).trim()]
-      );
-
-      if (existing.length > 0) {
-        skipped++;
+      if (missingFields.length > 0) {
+        skippedRows.push({
+          row: i + 1,
+          reason: `Missing required fields: ${missingFields.join(", ")}`,
+          data: policies[i]
+        });
         continue;
       }
 
-      // Insert new policy
-      await connection.query(
-        `INSERT INTO policies 
-         (plate, owner, company, start_date, expiry_date, contact)
+      // ----- Validate date format -----
+      if (isNaN(Date.parse(start_date)) || isNaN(Date.parse(expiry_date))) {
+        skippedRows.push({
+          row: i + 1,
+          reason: "Invalid date format (YYYY-MM-DD required)",
+          data: policies[i]
+        });
+        continue;
+      }
+
+      // ----- Optional: skip duplicates based on plate only -----
+      const existing = await query(
+        "SELECT id FROM policies WHERE plate = ?", 
+        [cleanPlate]
+      );
+      if (existing.length > 0) {
+        skippedRows.push({
+          row: i + 1,
+          reason: "Duplicate plate number",
+          data: policies[i]
+        });
+        continue;
+      }
+
+      // ----- Insert valid policy -----
+      const result = await query(
+        `INSERT INTO policies (plate, owner, company, start_date, expiry_date, contact)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          plate.trim(),
-          owner.trim(),
-          company.trim().toUpperCase(),
-          start_date,
-          expiry_date,
-          String(contact).trim(),
-        ]
+        [cleanPlate, cleanOwner, cleanCompany, start_date, expiry_date, cleanContact]
       );
 
-      inserted++;
+      insertedRows.push({ row: i + 1, id: result.insertId, data: policies[i] });
+
+    } catch (err) {
+      skippedRows.push({
+        row: i + 1,
+        reason: "Database error: " + err.message,
+        data: policies[i]
+      });
     }
+  }
 
-    await connection.commit();
+  // ----- Friendly summary for frontend -----
+  let message = "";
+  if (insertedRows.length === 0) {
+    message = "No new policies were imported. All rows were invalid or duplicates.";
+  } else if (skippedRows.length === 0) {
+    message = `${insertedRows.length} policies imported successfully!`;
+  } else {
+    message = `${insertedRows.length} policies imported, ${skippedRows.length} rows skipped due to errors or duplicates.`;
+  }
 
-    res.json({
-      success: true,
-      inserted,
-      skipped,
-      total: policies.length,
-    });
+  res.json({
+    success: insertedRows.length > 0,
+    message,
+    totalRows: policies.length,
+    inserted: insertedRows.length,
+    skipped: skippedRows.length,
+    insertedRows, // show valid inserted rows in frontend
+    skippedRows   // show skipped rows with reasons in frontend
+  });
+});
+// --- ADVERTISEMENT SYSTEM API ---
 
+/**
+ * 1. CREATE: Add a new company advertisement
+ */
+app.post("/api/ads",  async (req, res) => {
+  const {
+    company_name,
+    ad_type = "image",
+    media_url,
+    title,
+    cta_text = "Learn More",
+    target_url
+  } = req.body;
+
+  if (!company_name || !media_url) {
+    return res.status(400).json({ error: "company_name and media_url are required" });
+  }
+
+  try {
+    const result = await query(
+      `
+      INSERT INTO advertisements 
+      (company_name, ad_type, media_url, title, cta_text, target_url)
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      [company_name, ad_type, media_url, title, cta_text, target_url]
+    );
+
+    const ad = await query(
+      "SELECT * FROM advertisements WHERE id = ?",
+      [result.insertId]
+    );
+
+    res.status(201).json(ad[0]);
   } catch (err) {
-    await connection.rollback();
-    res.status(400).json({ error: err.message });
-  } finally {
-    connection.release();
+    console.error("Create ad error:", err);
+    res.status(500).json({ error: "Failed to create advertisement" });
+  }
+});
+app.get("/api/ads", async (req, res) => {
+  try {
+    const ads = await query(
+      "SELECT * FROM advertisements ORDER BY created_at DESC"
+    );
+    res.json(ads);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch ads" });
+  }
+});
+app.get("/api/ads/random", async (req, res) => {
+  try {
+    const ads = await query(
+      "SELECT * FROM advertisements WHERE is_active = 1 ORDER BY RAND() LIMIT 1"
+    );
+
+    res.json(ads[0] || null);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch ad" });
+  }
+});
+app.patch("/api/ads/:id/status",  async (req, res) => {
+  const { id } = req.params;
+  const { is_active } = req.body;
+
+  try {
+    await query(
+      "UPDATE advertisements SET is_active = ? WHERE id = ?",
+      [is_active ? 1 : 0, id]
+    );
+
+    res.json({ message: "Ad status updated successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update ad status" });
+  }
+});
+app.delete("/api/ads/:id", async (req, res) => {
+  try {
+    await query(
+      "DELETE FROM advertisements WHERE id = ?",
+      [req.params.id]
+    );
+    res.json({ message: "Ad deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete ad" });
   }
 });
 

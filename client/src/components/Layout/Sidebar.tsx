@@ -7,7 +7,8 @@ import {
   BarChart4,    
   ClockAlert,   
   Handshake,    
-  History       
+  History,
+  Megaphone // Added for Ad Manager
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { cn } from "@/lib/utils";
@@ -66,8 +67,7 @@ export const Sidebar = () => {
             <span className="text-white font-black text-xl">B</span>
           </div>
           <div className="flex flex-col">
-            <span className="font-bold text-slate-900 dark:text-slate-100 leading-tight tracking-tight">Bright Cover
-            Agency</span>
+            <span className="font-bold text-slate-900 dark:text-slate-100 leading-tight tracking-tight">Bright Cover Agency</span>
           </div>
         </div>
       </div>
@@ -100,6 +100,25 @@ export const Sidebar = () => {
             ))}
           </div>
         </section>
+
+        {/* --- ADDED: Partnerships Group (Ad Manager) --- */}
+        {isAdmin && (
+          <section>
+            <h3 className="text-[11px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-[0.2em] px-4 mb-4">
+              Partnerships
+            </h3>
+            <div className="space-y-1">
+              <NavLink
+                to="/ad-manager"
+                className="group flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all duration-200"
+                activeClassName="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold shadow-sm ring-1 ring-indigo-100 dark:ring-indigo-500/20"
+              >
+                <Megaphone className="w-5 h-5 opacity-70 group-hover:opacity-100 transition-opacity" strokeWidth={2} />
+                <span>Ad Manager</span>
+              </NavLink>
+            </div>
+          </section>
+        )}
 
         {/* Intelligence Group */}
         <section>

@@ -24,11 +24,15 @@ interface PolicyFollowUp {
   id: number;
   plate: string;
   owner: string;
+  contact: string;
+  company: string;
+  expiryDate: string;
   followup_status: "confirmed" | "pending" | "missed";
 }
 
 const API_FOLLOWUP = `${import.meta.env.VITE_API_URL}/api/followup`;
 const API_REMINDER = `${import.meta.env.VITE_API_URL}/api/policies/send-reminder`;
+
 export default function FollowUps() {
   const { toast } = useToast();
   const [data, setData] = useState<PolicyFollowUp[]>([]);
@@ -79,7 +83,7 @@ export default function FollowUps() {
           <div className="flex items-center gap-2 mb-1">
              <LayoutDashboard className="w-6 h-6 text-blue-600" />
              <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">
-                Follow-Ups
+               Follow-Ups
              </h1>
           </div>
           <p className="text-slate-500 text-sm font-medium">Manage and track renewal confirmations</p>
@@ -136,13 +140,31 @@ export default function FollowUps() {
                 className="p-4"
               >
                 <TabsContent value="confirmed" className="mt-0 outline-none">
-                  <PolicyTable data={grouped.confirmed} sendReminderEndpoint={API_REMINDER} refreshData={fetchData} searchable={false} />
+                  <PolicyTable 
+                    data={grouped.confirmed} 
+                    followUpEndpoint={API_FOLLOWUP}
+                    sendReminderEndpoint={API_REMINDER} 
+                    refreshData={fetchData} 
+                    searchable={false} 
+                  />
                 </TabsContent>
                 <TabsContent value="pending" className="mt-0 outline-none">
-                  <PolicyTable data={grouped.pending} sendReminderEndpoint={API_REMINDER} refreshData={fetchData} searchable={false} />
+                  <PolicyTable 
+                    data={grouped.pending} 
+                    followUpEndpoint={API_FOLLOWUP}
+                    sendReminderEndpoint={API_REMINDER} 
+                    refreshData={fetchData} 
+                    searchable={false} 
+                  />
                 </TabsContent>
                 <TabsContent value="missed" className="mt-0 outline-none">
-                  <PolicyTable data={grouped.missed} sendReminderEndpoint={API_REMINDER} refreshData={fetchData} searchable={false} />
+                  <PolicyTable 
+                    data={grouped.missed} 
+                    followUpEndpoint={API_FOLLOWUP}
+                    sendReminderEndpoint={API_REMINDER} 
+                    refreshData={fetchData} 
+                    searchable={false} 
+                  />
                 </TabsContent>
               </motion.div>
             </AnimatePresence>
@@ -153,8 +175,7 @@ export default function FollowUps() {
   );
 }
 
-/** * Sub-components with internal animations
- */
+/** * Sub-components with internal animations */
 
 function StatusCard({ title, count, icon: Icon, color }: { title: string, count: number, icon: any, color: 'emerald' | 'amber' | 'rose' }) {
   const colors = {
@@ -195,7 +216,6 @@ function TabTrigger({ value, label, count, color }: { value: string, label: stri
   );
 }
 
-// Utility function for classes
 function cn(...classes: any[]) {
   return classes.filter(Boolean).join(' ');
 }

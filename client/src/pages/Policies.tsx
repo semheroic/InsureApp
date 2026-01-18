@@ -1,5 +1,4 @@
-import react from 'react';
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Plus, Search, Download, Edit, Trash2, Eye, Calendar as CalendarIcon, Car, User, Building2, Phone, ClipboardPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-
+import { X } from "lucide-react"
+import {  DialogClose } from "@/components/ui/dialog"
 import {
   Select,
   SelectContent,
@@ -378,19 +378,64 @@ const counts = useMemo(() => {
 
   /* ---------------- IMPORT HANDLER ---------------- */
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const { policies: imported, errors } = await importCSV(file);
-    if (errors.length) {
-      const proceed = window.confirm(`${errors.length} errors found. ${imported.length} valid rows will be imported. Continue?`);
-      if (!proceed) return;
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  // Step 1: Parse CSV locally
+  const { policies: imported, errors } = await importCSV(file);
+
+  // Step 2: Show toast if CSV parsing errors
+  if (errors.length) {
+    toast({
+      title: "CSV Parsing Errors",
+      description: `${errors.length} row(s) have errors. Valid rows will still be imported.`,
+      variant: "destructive",
+      duration: 6000,
+    });
+  }
+
+  // Step 3: If no valid rows, stop
+  if (!imported.length) return;
+
+  try {
+    // Step 4: Send valid rows to backend
+    const res = await axios.post(`${API_URL}/import`, { policies: imported });
+    const { inserted, skipped, insertedRows, skippedRows, message } = res.data;
+
+    // Step 5: Show toast summary
+    toast({
+      title: "Import Summary",
+      description: message,
+      variant: inserted > 0 ? "default" : "destructive",
+      duration: 6000,
+    });
+
+    // Optional: show detailed toast for skipped rows
+    if (skippedRows.length) {
+      skippedRows.forEach((row: any) => {
+        toast({
+          title: `Row ${row.row} skipped`,
+          description: row.reason,
+          variant: "destructive",
+          duration: 7000,
+        });
+      });
     }
-    if (imported.length) {
-      await axios.post(`${API_URL}/import`, { policies: imported });
-      toast({ title: "Import Successful", description: `${imported.length} policies imported.` });
-      checkAuthAndFetch();
-    }
-  };
+
+    // Step 6: Refresh policies list
+    checkAuthAndFetch();
+  } catch (err: any) {
+    toast({
+      title: "Import Failed",
+      description: err.response?.data?.message || "Could not import policies",
+      variant: "destructive",
+    });
+  } finally {
+    // Reset file input
+    e.target.value = "";
+  }
+};
+
 
   if (loading) return <p className="text-center py-20 text-muted-foreground animate-pulse">Synchronizing policies...</p>;
 
@@ -405,15 +450,36 @@ const counts = useMemo(() => {
           <Button variant="outline" className="gap-2" onClick={exportToCSV}>
             <Download className="w-4 h-4" /> Export CSV
           </Button>
-          <Button
-  variant="outline"
-  className="gap-2"
-  onClick={() => document.getElementById("import-file")?.click()}
->
-  <Download className="w-4 h-4 rotate-180" />
-  Import CSV
-</Button>
+         <div className="flex flex-col gap-1">
+  <Button
+    variant="outline"
+    className="gap-2"
+    onClick={() => document.getElementById("import-file")?.click()}
+  >
+    <Download className="w-4 h-4 rotate-180" />
+    Import CSV
+  </Button>
 
+  {/* Small template download button */}
+  <Button
+    variant="ghost"
+    size="sm"
+    className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 flex items-center gap-1"
+    onClick={() => {
+      const headers = ["plate","owner","company","start_date","expiry_date","contact"];
+      const csv = [headers].map(r => r.join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "policies_template.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }}
+  >
+    <ClipboardPlus className="w-3 h-3" /> Download Template
+  </Button>
+</div>
 <input
   id="import-file"
   type="file"
@@ -647,11 +713,18 @@ const counts = useMemo(() => {
       {/* ADD DIALOG - RESTORED FULL FIELDS */}
       
 
-{/* USER-FRIENDLY REDESIGNED ADD POLICY DIALOG */}
 <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
   <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden border-none shadow-2xl rounded-2xl">
-    {/* Header with a Professional "Insurance Blue" Theme */}
-    <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 text-white">
+    {/* Header - Added 'relative' class here */}
+    <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 p-6 text-white">
+      
+      {/* --- Added Close Button --- */}
+      <DialogClose className="absolute right-4 top-4 rounded-full p-1 opacity-70 ring-offset-slate-900 transition-opacity hover:opacity-100 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <X className="h-4 w-4 text-white" />
+        <span className="sr-only">Close</span>
+      </DialogClose>
+      {/* ------------------------- */}
+
       <DialogHeader>
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center border border-blue-500/30">
@@ -768,7 +841,7 @@ const counts = useMemo(() => {
       </div>
     </div>
 
-    {/* Footer with emphasis on the Save Action */}
+    {/* Footer */}
     <DialogFooter className="p-6 pt-0 bg-background flex flex-row gap-3">
       <Button 
         variant="ghost" 

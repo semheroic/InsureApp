@@ -18,6 +18,7 @@ import FollowUp from "./pages/Followup";
 import { EditProfile } from "./components/Layout/EditProfile";
 import PolicyHistoryTracker from "./pages/PolicyHistory";
 import NetworkStatus from "./hooks/NetworkStatus";
+import { AdManager } from "./pages/AdManager";
 
 const queryClient = new QueryClient();
 
@@ -44,7 +45,7 @@ const App = () => (
           <Route path="/signup" element={<AddUser/>} />
           <Route path="/forgot-password" element={<ForgotPassword/>} />
           <Route path="/verify-otp" element={<VerifyOtp/>} />
-
+          <Route path="/ad-manager" element={<MainLayout><AdManager /></MainLayout>} />
           {/* Protected/Main Routes wrapped in MainLayout */}
           <Route path="/dashboard" element={<MainLayout><Dashboard /></MainLayout>} />
           <Route path="/policies" element={<MainLayout><Policies /></MainLayout>} />

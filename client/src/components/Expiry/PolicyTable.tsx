@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { 
-  Send, CheckCircle, Clock, XCircle, FileX, 
-  Search, X, RotateCcw, User, Shield, Download 
+  Send, CheckCircle, Clock, XCircle, 
+  Search, X, RotateCcw, Shield, Download, 
+  Phone, Loader2, User, Smartphone 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,17 +14,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+
 const API_URL = import.meta.env.VITE_API_URL;
+
 interface ActionButtonProps {
   icon: any;
   active: boolean;
+  isLoading?: boolean;
   color: "blue" | "emerald" | "rose";
   onClick: () => void;
 }
 
-const ActionButton = ({ icon: Icon, active, color, onClick }: ActionButtonProps) => {
+const ActionButton = ({ icon: Icon, active, isLoading, color, onClick }: ActionButtonProps) => {
   const colorMap = {
     blue: active ? "bg-blue-600 text-white shadow-blue-200/50" : "text-blue-600 bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-600 hover:text-white",
     emerald: active ? "bg-emerald-600 text-white shadow-emerald-200/50" : "text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-600 hover:text-white",
@@ -33,13 +43,18 @@ const ActionButton = ({ icon: Icon, active, color, onClick }: ActionButtonProps)
   return (
     <button
       onClick={onClick}
+      disabled={isLoading}
       className={cn(
-        "h-9 w-9 flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90",
+        "h-9 w-9 flex items-center justify-center rounded-xl transition-all duration-200 active:scale-90 disabled:opacity-50",
         active && "shadow-lg scale-105 ring-2 ring-white dark:ring-slate-950",
         colorMap[color]
       )}
     >
-      <Icon size={18} strokeWidth={2.5} />
+      {isLoading ? (
+        <Loader2 size={16} className="animate-spin" />
+      ) : (
+        <Icon size={18} strokeWidth={2.5} />
+      )}
     </button>
   );
 };
@@ -53,6 +68,8 @@ export const PolicyTable = ({
 }: any) => {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [selectedPolicy, setSelectedPolicy] = useState<any>(null);
 
   const filteredData = useMemo(() => {
     const term = searchQuery.toLowerCase().trim();
@@ -64,25 +81,42 @@ export const PolicyTable = ({
     );
   }, [data, searchQuery]);
 
+  // FIX: This function now correctly identifies the policy_id regardless of which page you are on
   const handleFollowUp = async (policy: any, status: string) => {
+    const actualPolicyId = policy.policy_id || policy.id;
+    setLoadingId(`${policy.id}-${status}`);
+    
     try {
       const res = await fetch(followUpEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ policy_id: policy.id, followup_status: status }),
+        body: JSON.stringify({ 
+          policy_id: actualPolicyId, 
+          followup_status: status 
+        }),
       });
+      
       if (res.ok) {
         toast({ title: "Status Updated", description: `Policy ${policy.plate} is now ${status}` });
         refreshData?.();
+      } else {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to update");
       }
-    } catch (err) {
-      toast({ title: "Error", variant: "destructive", description: "Save failed" });
+    } catch (err: any) {
+      toast({ title: "Error", variant: "destructive", description: err.message });
+    } finally {
+      setLoadingId(null);
     }
   };
 
-  const handleClear = async (policyId: number) => {
+  // FIX: DELETE now targets policy_id from the URL params as expected by your backend
+  const handleClear = async (policy: any) => {
+    const actualPolicyId = policy.policy_id || policy.id;
+    setLoadingId(`${policy.id}-clear`);
+    
     try {
-      const res = await fetch(`${API_URL}/api/followup/${policyId}`, {
+      const res = await fetch(`${API_URL}/api/followup/${actualPolicyId}`, {
         method: "DELETE"
       });
       if (res.ok) {
@@ -91,6 +125,8 @@ export const PolicyTable = ({
       }
     } catch (err) {
       toast({ title: "Error", variant: "destructive" });
+    } finally {
+      setLoadingId(null);
     }
   };
 
@@ -120,6 +156,40 @@ export const PolicyTable = ({
 
   return (
     <div className="space-y-6 font-sans">
+      <Dialog open={!!selectedPolicy} onOpenChange={() => setSelectedPolicy(null)}>
+        <DialogContent className="sm:max-w-[400px] rounded-[24px] border-slate-200 dark:border-slate-800">
+          <DialogHeader>
+            <DialogTitle className="text-[16px] font-bold tracking-tight">Contact Information</DialogTitle>
+          </DialogHeader>
+          <div className="py-6 space-y-4">
+            <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+              <div className="h-10 w-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm">
+                <User size={18} className="text-slate-500" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Owner</span>
+                <span className="text-[15px] font-bold text-slate-900 dark:text-white">{selectedPolicy?.owner}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 p-4 rounded-2xl bg-blue-50/50 dark:bg-blue-500/5 border border-blue-100/50 dark:border-blue-500/10">
+              <div className="h-10 w-10 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm">
+                <Smartphone size={18} className="text-blue-600" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-blue-400">Phone Number</span>
+                <span className="text-[18px] font-mono font-bold text-blue-700 dark:text-blue-400">{selectedPolicy?.contact}</span>
+              </div>
+            </div>
+            <Button 
+              className="w-full h-12 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold uppercase text-[12px] tracking-widest hover:opacity-90"
+              onClick={() => window.location.href = `tel:${selectedPolicy?.contact}`}
+            >
+              Start Call
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         {searchable && (
           <div className="relative flex items-center flex-1 max-w-md group">
@@ -164,10 +234,11 @@ export const PolicyTable = ({
             {filteredData.length > 0 ? (
               filteredData.map((policy: any) => {
                 const status = policy.followup_status;
+                const isClearing = loadingId === `${policy.id}-clear`;
+
                 return (
                   <TableRow 
                     key={policy.id} 
-                    
                     className={cn(
                       "group transition-all duration-300 border-b border-slate-100 dark:border-slate-900 last:border-0",
                       status === "confirmed" && "bg-blue-500/[0.07] hover:bg-blue-500/[0.12] dark:bg-blue-500/[0.12]",
@@ -215,17 +286,51 @@ export const PolicyTable = ({
 
                     <TableCell className="pr-8 py-4">
                       <div className="flex justify-end gap-2 items-center">
+                        <Button
+                          variant="ghost"
+                          onClick={() => setSelectedPolicy(policy)}
+                          className="h-9 px-3 rounded-xl gap-2 font-bold uppercase text-[10px] tracking-widest border border-transparent hover:border-slate-200 dark:hover:border-slate-800"
+                        >
+                          <Phone size={14} />
+                          Call Now
+                        </Button>
+
+                        <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-1" />
+
                         {status && (
                           <button
-                            onClick={() => handleClear(policy.id)}
-                            className="p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                            onClick={() => handleClear(policy)}
+                            disabled={isClearing}
+                            className="p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors disabled:opacity-30"
                           >
-                            <RotateCcw size={16} strokeWidth={2.5} />
+                            {isClearing ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                              <RotateCcw size={16} strokeWidth={2.5} />
+                            )}
                           </button>
                         )}
-                        <ActionButton icon={CheckCircle} active={status === "confirmed"} color="blue" onClick={() => handleFollowUp(policy, "confirmed")} />
-                        <ActionButton icon={Clock} active={status === "pending"} color="emerald" onClick={() => handleFollowUp(policy, "pending")} />
-                        <ActionButton icon={XCircle} active={status === "missed"} color="rose" onClick={() => handleFollowUp(policy, "missed")} />
+                        <ActionButton 
+                          icon={CheckCircle} 
+                          active={status === "confirmed"} 
+                          isLoading={loadingId === `${policy.id}-confirmed`}
+                          color="blue" 
+                          onClick={() => handleFollowUp(policy, "confirmed")} 
+                        />
+                        <ActionButton 
+                          icon={Clock} 
+                          active={status === "pending"} 
+                          isLoading={loadingId === `${policy.id}-pending`}
+                          color="emerald" 
+                          onClick={() => handleFollowUp(policy, "pending")} 
+                        />
+                        <ActionButton 
+                          icon={XCircle} 
+                          active={status === "missed"} 
+                          isLoading={loadingId === `${policy.id}-missed`}
+                          color="rose" 
+                          onClick={() => handleFollowUp(policy, "missed")} 
+                        />
                         
                         <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-1" />
                         

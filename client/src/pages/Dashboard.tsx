@@ -167,7 +167,10 @@ const Dashboard = () => {
          
         </motion.div>
       </motion.div>
-    
+     {/* ads display section  */}
+     <motion.div variants={itemVars}>
+       <AdsDisplay showInactive={false} max={3} />
+       </motion.div>
       {/* Stat Cards - Staggered Entry */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
@@ -188,10 +191,7 @@ const Dashboard = () => {
           </motion.div>
         ))}
       </div>
- {/* ads display section  */}
-     <motion.div variants={itemVars}>
-       <AdsDisplay showInactive={false} max={3} />
-       </motion.div>
+
       {/* Trend Chart & Summary - Staggered Entry */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <motion.div variants={itemVars} className="lg:col-span-2">

@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import axios from "axios";
-import { Loader2, ExternalLink } from "lucide-react";
+import { Loader2, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 const BASE = import.meta.env.VITE_API_URL;
 
@@ -18,13 +19,14 @@ export interface Ad {
 }
 
 interface AdsDisplayProps {
-  showInactive?: boolean; // whether to show inactive ads
-  max?: number; // max number of ads to show
+  showInactive?: boolean;
+  max?: number;
 }
 
 export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, max }) => {
   const [ads, setAds] = useState<Ad[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   const fetchAds = async () => {
     setLoading(true);
@@ -42,9 +44,28 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
     }
   };
 
+  useEffect(() => { fetchAds(); }, []);
+
+  // --- Navigation Logic ---
+  const nextAd = useCallback(() => {
+    setCurrentIndex((prev) => (prev + 1) % ads.length);
+  }, [ads.length]);
+
+  const prevAd = useCallback(() => {
+    setCurrentIndex((prev) => (prev - 1 + ads.length) % ads.length);
+  }, [ads.length]);
+
+  // --- Auto-scroll Logic (Scrolls every 5 seconds) ---
   useEffect(() => {
-    fetchAds();
-  }, []);
+    if (ads.length <= 1) return;
+    const interval = setInterval(nextAd, 5000);
+    return () => clearInterval(interval);
+  }, [ads.length, nextAd]);
+
+  const getMediaSrc = (url: string) => {
+    if (!url) return "";
+    return url.startsWith("http") ? url : `${BASE}${url}`;
+  };
 
   if (loading) {
     return (
@@ -54,46 +75,96 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
     );
   }
 
-  if (!ads.length) {
-    return <p className="text-center text-slate-400 py-16 font-bold uppercase text-xs">No ads available</p>;
-  }
+  if (!ads.length) return null;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {ads.map(ad => (
-        <Card key={ad.id} className={cn(
-          "overflow-hidden group rounded-2xl transition-all bg-white dark:bg-slate-900 shadow-lg",
-          !ad.is_active && "opacity-60 grayscale-[0.5]"
-        )}>
-          <div className="aspect-video relative bg-slate-100 dark:bg-slate-800">
-            {ad.ad_type === "video" ? (
-              <video src={ad.media_url} className="w-full h-full object-cover" autoPlay muted loop playsInline />
-            ) : (
-              <img src={ad.media_url} alt={ad.title || ad.company_name} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-            )}
+    <div className="relative w-full max-w-4xl mx-auto group">
+      {/* Navigation Buttons */}
+      <div className="absolute -left-4 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button 
+          variant="outline" 
+          size="icon" 
+          className="rounded-full shadow-xl bg-white/90 backdrop-blur dark:bg-slate-800/90 border-none h-10 w-10"
+          onClick={prevAd}
+        >
+          <ChevronLeft className="w-6 h-6 text-indigo-600" />
+        </Button>
+      </div>
 
-            <div className="absolute top-4 right-4">
-              <Badge className={cn(
-                "border-none font-black text-[9px] uppercase px-3 py-1.5 rounded-full",
-                ad.is_active ? "bg-emerald-500 text-white" : "bg-slate-500 text-white"
-              )}>
-                {ad.is_active ? "Live" : "Paused"}
-              </Badge>
+      <div className="absolute -right-4 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button 
+          variant="outline" 
+          size="icon" 
+          className="rounded-full shadow-xl bg-white/90 backdrop-blur dark:bg-slate-800/90 border-none h-10 w-10"
+          onClick={nextAd}
+        >
+          <ChevronRight className="w-6 h-6 text-indigo-600" />
+        </Button>
+      </div>
+
+      {/* Main Container */}
+      <div className="overflow-hidden rounded-[32px] shadow-2xl border border-slate-100 dark:border-slate-800">
+        <div 
+          className="flex transition-transform duration-700 ease-in-out" 
+          style={{ transform: `translateX(-${currentIndex * 100}%)` }}
+        >
+          {ads.map((ad) => (
+            <div key={ad.id} className="w-full flex-shrink-0">
+              <Card className="border-none bg-white dark:bg-slate-900 rounded-none overflow-hidden">
+                <div className="relative w-full aspect-[21/9] bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                  {ad.ad_type === "video" ? (
+                    <video
+                      src={getMediaSrc(ad.media_url)}
+                      className="w-full h-full object-cover"
+                      autoPlay muted loop playsInline preload="auto"
+                    />
+                  ) : (
+                    <img
+                      src={getMediaSrc(ad.media_url)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+
+                  <div className="absolute top-6 left-6 flex items-center gap-3">
+                    <div className="px-4 py-1.5 bg-white/20 backdrop-blur-md rounded-full border border-white/30 text-white text-[10px] font-black uppercase tracking-widest">
+                      Sponsored by {ad.company_name}
+                    </div>
+                  </div>
+
+                  <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-slate-900/90 to-transparent text-white">
+                    <h3 className="text-2xl font-black mb-2 leading-tight">{ad.title || "Special Offer"}</h3>
+                    {ad.target_url && (
+                      <a
+                        href={ad.target_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-sm font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+                      >
+                        Learn More <ExternalLink size={14} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </Card>
             </div>
-          </div>
+          ))}
+        </div>
+      </div>
 
-          <div className="p-4 space-y-2">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-600">{ad.company_name}</p>
-            <h3 className="font-bold text-lg text-slate-900 dark:text-white">{ad.title || "Sponsored"}</h3>
-
-            {ad.target_url && (
-              <a href={ad.target_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm font-bold text-indigo-600 hover:underline">
-                Visit <ExternalLink size={14} />
-              </a>
+      {/* Pagination Dots */}
+      <div className="flex justify-center gap-2 mt-6">
+        {ads.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => setCurrentIndex(i)}
+            className={cn(
+              "h-1.5 transition-all duration-300 rounded-full",
+              currentIndex === i ? "w-8 bg-indigo-600" : "w-2 bg-slate-300 dark:bg-slate-700"
             )}
-          </div>
-        </Card>
-      ))}
+          />
+        ))}
+      </div>
     </div>
   );
 };

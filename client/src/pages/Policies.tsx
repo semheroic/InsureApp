@@ -3,7 +3,11 @@ import axios from "axios";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Download, Edit, Trash2, Eye, Calendar as CalendarIcon, Car, User, Building2, Phone, ClipboardPlus } from "lucide-react";
+import { 
+  Plus, Search, Download, Edit, Trash2, Eye, 
+  Calendar as CalendarIcon, Car, User, Building2, 
+  Phone, ClipboardPlus, ChevronLeft, ChevronRight 
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react"
@@ -197,6 +201,13 @@ const Policies = () => {
   const isAdmin = roleClean === "admin";
   const isManager = roleClean === "manager";
   const canModify = isAdmin || isManager;
+  
+/*  store original dates */
+const [originalDates, setOriginalDates] = useState<{
+  start_date: string;
+  expiry_date: string;
+} | null>(null);
+
 
   /* ---------------- FETCH ---------------- */
   const checkAuthAndFetch = async () => {
@@ -323,16 +334,46 @@ const counts = useMemo(() => {
   };
 
   const handleEdit = async () => {
-    if (!selectedPolicy) return;
-    try {
-      await axios.put(`${API_URL}/${selectedPolicy.id}`, { ...formData, start_date: formData.startDate, expiry_date: formData.expiryDate });
-      checkAuthAndFetch();
-      setIsEditDialogOpen(false);
-      toast({ title: "Updated", description: "Policy saved" });
-    } catch {
-      toast({ title: "Error", description: "Update failed", variant: "destructive" });
+  if (!selectedPolicy || !originalDates) return;
+
+  const datesChanged =
+    formData.startDate !== originalDates.start_date ||
+    formData.expiryDate !== originalDates.expiry_date;
+
+  try {
+    if (datesChanged) {
+      // 🔁 RENEW ROUTE
+      await axios.put(`${API_URL}/${selectedPolicy.id}/renew`, {
+        start_date: formData.startDate,
+        expiry_date: formData.expiryDate,
+        contact: formData.contact,
+      });
+
+      toast({ title: "Renewed", description: "Policy renewed successfully" });
+    } else {
+      // ✏️ EDIT ROUTE
+      await axios.put(`${API_URL}/${selectedPolicy.id}`, {
+        plate: formData.plate,
+        owner: formData.owner,
+        company: formData.company,
+        contact: formData.contact,
+      });
+
+      toast({ title: "Updated", description: "Policy updated successfully" });
     }
-  };
+
+    checkAuthAndFetch();
+    setIsEditDialogOpen(false);
+    setOriginalDates(null);
+  } catch (err) {
+    toast({
+      title: "Error",
+      description: "Update failed",
+      variant: "destructive",
+    });
+  }
+};
+
 
   const handleDelete = async () => {
     if (!selectedPolicy) return;
@@ -435,6 +476,7 @@ const counts = useMemo(() => {
     e.target.value = "";
   }
 };
+{/*  */}
 
 
   if (loading) return <p className="text-center py-20 text-muted-foreground animate-pulse">Synchronizing policies...</p>;
@@ -630,22 +672,34 @@ const counts = useMemo(() => {
                     </Button>
                     
                     {canModify && (
-                      <Button variant="ghost" size="icon" onClick={() => {
-                        setSelectedPolicy(policy);
-                        setFormData({
-                          plate: policy.plate,
-                          owner: policy.owner,
-                          company: policy.company,
-                          startDate: policy.start_date,
-                          expiryDate: policy.expiry_date,
-                          contact: policy.contact,
-                        });
-                        setIsEditDialogOpen(true);
-                      }}>
+                      <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                            setSelectedPolicy(policy);
+
+    setFormData({
+      plate: policy.plate,
+      owner: policy.owner,
+      company: policy.company,
+      startDate: policy.start_date,
+      expiryDate: policy.expiry_date,
+      contact: policy.contact,
+    });
+
+    // ✅ store originals
+    setOriginalDates({
+      start_date: policy.start_date,
+      expiry_date: policy.expiry_date,
+    });
+
+    setIsEditDialogOpen(true);
+  }}
+>
+
                         <Edit className="w-4 h-4" />
                       </Button>
                     )}
-
                     {isAdmin && (
                       <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { setSelectedPolicy(policy); setIsDeleteDialogOpen(true); }}>
                         <Trash2 className="w-4 h-4" />
@@ -657,8 +711,50 @@ const counts = useMemo(() => {
             </TableBody>
           </Table>
         </div>
+        <div className="flex items-center justify-between px-2 py-4 border-t bg-slate-50/50 dark:bg-slate-900/50">
+          {/* Status Number Text */}
+          <div className="text-sm text-muted-foreground">
+            Showing {" "}
+            <span className="font-semibold text-foreground">
+              {filteredPolicies.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1}
+            </span>
+            {" "} to {" "}
+            <span className="font-semibold text-foreground">
+              {Math.min(currentPage * itemsPerPage, filteredPolicies.length)}
+            </span>
+            {" "} of {" "}
+            <span className="font-semibold text-foreground">{filteredPolicies.length}</span> entries
+          </div>
+          
+          {/* Navigation Buttons */}
+          <div className="flex items-center gap-4">
+            <div className="text-sm font-medium">
+              Page {currentPage} of {Math.ceil(filteredPolicies.length / itemsPerPage) || 1}
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={currentPage >= Math.ceil(filteredPolicies.length / itemsPerPage)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
       </Card>
-
       {/* VIEW DIALOG - RESTORED FULL FIELDS */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent>

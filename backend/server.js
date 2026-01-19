@@ -627,32 +627,42 @@ app.get("/policies", async (req, res) => {
   try {
     const sql = `
       SELECT 
-        id, 
-        plate, 
-        owner, 
-        company, 
-        DATE_FORMAT(start_date, '%Y-%m-%d') AS start_date, 
-        DATE_FORMAT(expiry_date, '%Y-%m-%d') AS expiry_date, 
-        contact,
-        CASE 
-          /* 1. Show 'Renewed' ONLY if updated in last 12h AND it's not a brand new record */
-          WHEN updated_at > NOW() - INTERVAL 12 HOUR 
-               AND updated_at > created_at + INTERVAL 1 MINUTE 
-               THEN 'Renewed'
-          
-          /* 2. Standard date-based logic */
-          WHEN DATEDIFF(expiry_date, NOW()) < 0 THEN 'Expired'
-          WHEN DATEDIFF(expiry_date, NOW()) <= 3 THEN 'Expiring Soon'
+        p.id,
+        p.plate,
+        p.owner,
+        p.company,
+        DATE_FORMAT(p.start_date, '%Y-%m-%d') AS start_date,
+        DATE_FORMAT(p.expiry_date, '%Y-%m-%d') AS expiry_date,
+        p.contact,
+
+        CASE
+          -- ✅ RENEWED: policy has been renewed (date changed)
+          WHEN EXISTS (
+            SELECT 1
+            FROM policy_history ph
+            WHERE ph.policy_id = p.id
+              AND ph.renewed_date IS NOT NULL
+          ) THEN 'Renewed'
+
+          -- ❌ EXPIRED
+          WHEN DATEDIFF(p.expiry_date, CURDATE()) < 0 THEN 'Expired'
+
+          -- ⚠️ EXPIRING SOON
+          WHEN DATEDIFF(p.expiry_date, CURDATE()) <= 3 THEN 'Expiring Soon'
+
+          -- ✅ ACTIVE
           ELSE 'Active'
         END AS status
-      FROM policies 
-      ORDER BY expiry_date ASC
+
+      FROM policies p
+      ORDER BY p.expiry_date ASC
     `;
 
     const policies = await query(sql);
     res.json(policies);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Fetch policies error:", err);
+    res.status(500).json({ error: "Failed to fetch policies" });
   }
 });
 app.get("/policies/:id", async (req, res) => {
@@ -700,6 +710,25 @@ app.post("/policies", async (req, res) => {
   }
 });
 
+app.put("/policies/:id", async (req, res) => {
+  const { plate, owner, company, contact } = req.body;
+  if (req.body.start_date || req.body.expiry_date) {
+  return res.status(400).json({
+    error: "Use /renew endpoint to change policy dates",
+  });
+}
+  const result = await query(`
+    UPDATE policies
+    SET plate=?, owner=?, company=?, contact=?, updated_at=NOW()
+    WHERE id=?
+  `, [plate, owner, company, contact, req.params.id]);
+
+  if (result.affectedRows === 0) {
+    return res.status(404).json({ error: "Policy not found" });
+  }
+
+  res.json({ message: "Policy updated successfully" });
+});
 
 // PUT: Renew policy and log history
 
@@ -793,32 +822,39 @@ cron.schedule("0 0 * * *", async () => {
     `, [p.id, p.expiry_date, p.id, p.expiry_date]);
   }
 });
-//history 
-app.put("/policies/:id", async (req, res) => {
+
+app.put("/policies/:id/renew", async (req, res) => {
   const { start_date, expiry_date, contact } = req.body;
   const policyId = req.params.id;
 
-  // Update policy
+  const [current] = await query(
+    "SELECT start_date, expiry_date FROM policies WHERE id=?",
+    [policyId]
+  );
+
+  if (!current) {
+    return res.status(404).json({ error: "Policy not found" });
+  }
+
+  // Save old expiry
+  await query(`
+    INSERT INTO policy_history (policy_id, expiry_date, renewed_date)
+    VALUES (?, ?, ?)
+  `, [policyId, current.expiry_date, start_date]);
+
+  // Update policy dates
   await query(`
     UPDATE policies
     SET start_date=?, expiry_date=?, contact=?, updated_at=NOW()
     WHERE id=?
   `, [start_date, expiry_date, contact, policyId]);
 
-  // Update policy_history: set renewed_date for the last expiry
-  await query(`
-    UPDATE policy_history
-    SET renewed_date=?
-    WHERE policy_id=? AND renewed_date IS NULL
-    ORDER BY expiry_date DESC
-    LIMIT 1
-  `, [start_date, policyId]);
-
-  sendSMS(contact, `Your insurance policy has been renewed from ${start_date} to ${expiry_date}`)
+  sendSMS(contact, `Your policy was renewed until ${expiry_date}`)
     .catch(console.error);
 
   res.json({ message: "Policy renewed successfully" });
 });
+
 app.get("/api/policy-history", async (req, res) => {
   try {
     const rows = await query(`
@@ -1158,15 +1194,15 @@ app.post("/policies/import", async (req, res) => {
 /**
  * 1. CREATE: Add a new company advertisement
  */
-app.post("/api/ads",  async (req, res) => {
-  const {
-    company_name,
-    ad_type = "image",
-    media_url,
-    title,
-    cta_text = "Learn More",
-    target_url
-  } = req.body;
+// Use 'upload.single("media")' for one file input named "media"
+app.post("/api/ads", upload.single("media"), async (req, res) => {
+  const { company_name, ad_type = "image", title, cta_text = "Learn More", target_url } = req.body;
+  let media_url = req.body.media_url; // fallback if no file uploaded
+
+  // If a file is uploaded, override media_url
+  if (req.file) {
+    media_url = `/uploads/${req.file.filename}`;
+  }
 
   if (!company_name || !media_url) {
     return res.status(400).json({ error: "company_name and media_url are required" });
@@ -1174,25 +1210,20 @@ app.post("/api/ads",  async (req, res) => {
 
   try {
     const result = await query(
-      `
-      INSERT INTO advertisements 
-      (company_name, ad_type, media_url, title, cta_text, target_url)
-      VALUES (?, ?, ?, ?, ?, ?)
-      `,
+      `INSERT INTO advertisements 
+       (company_name, ad_type, media_url, title, cta_text, target_url)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [company_name, ad_type, media_url, title, cta_text, target_url]
     );
 
-    const ad = await query(
-      "SELECT * FROM advertisements WHERE id = ?",
-      [result.insertId]
-    );
-
+    const ad = await query("SELECT * FROM advertisements WHERE id = ?", [result.insertId]);
     res.status(201).json(ad[0]);
   } catch (err) {
     console.error("Create ad error:", err);
     res.status(500).json({ error: "Failed to create advertisement" });
   }
 });
+
 app.get("/api/ads", async (req, res) => {
   try {
     const ads = await query(

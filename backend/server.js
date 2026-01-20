@@ -1091,13 +1091,11 @@ app.post("/policies/import", async (req, res) => {
   const { policies } = req.body;
 
   if (!Array.isArray(policies) || policies.length === 0) {
-    return res.status(400).json({ 
-      success: false, 
-      message: "You must upload at least one policy." 
-    });
+    return res.status(400).json({ success: false, message: "You must upload at least one policy." });
   }
 
   const insertedRows = [];
+  const updatedRows = []; // Track updates separately
   const skippedRows = [];
 
   for (let i = 0; i < policies.length; i++) {
@@ -1107,9 +1105,9 @@ app.post("/policies/import", async (req, res) => {
       const cleanPlate = plate?.trim();
       const cleanOwner = owner?.trim();
       const cleanCompany = company?.trim().toUpperCase();
-      const cleanContact = formatRwandaNumber(contact); // your helper
+      const cleanContact = formatRwandaNumber(contact);
 
-      // ----- Validate required fields -----
+      // 1. Validation Logic (Keep this as is)
       const missingFields = [];
       if (!cleanPlate) missingFields.push("plate");
       if (!cleanOwner) missingFields.push("owner");
@@ -1119,74 +1117,50 @@ app.post("/policies/import", async (req, res) => {
       if (!cleanContact) missingFields.push("contact");
 
       if (missingFields.length > 0) {
-        skippedRows.push({
-          row: i + 1,
-          reason: `Missing required fields: ${missingFields.join(", ")}`,
-          data: policies[i]
-        });
+        skippedRows.push({ row: i + 1, reason: `Missing: ${missingFields.join(", ")}`, data: policies[i] });
         continue;
       }
 
-      // ----- Validate date format -----
-      if (isNaN(Date.parse(start_date)) || isNaN(Date.parse(expiry_date))) {
-        skippedRows.push({
-          row: i + 1,
-          reason: "Invalid date format (YYYY-MM-DD required)",
-          data: policies[i]
-        });
-        continue;
-      }
+      // 2. Check if the plate already exists
+      const existing = await query("SELECT id FROM policies WHERE plate = ?", [cleanPlate]);
 
-      // ----- Optional: skip duplicates based on plate only -----
-      const existing = await query(
-        "SELECT id FROM policies WHERE plate = ?", 
-        [cleanPlate]
-      );
       if (existing.length > 0) {
-        skippedRows.push({
-          row: i + 1,
-          reason: "Duplicate plate number",
-          data: policies[i]
-        });
-        continue;
+        // ----- UPDATE EXISTING POLICY -----
+        await query(
+          `UPDATE policies 
+           SET owner = ?, company = ?, start_date = ?, expiry_date = ?, contact = ?
+           WHERE plate = ?`,
+          [cleanOwner, cleanCompany, start_date, expiry_date, cleanContact, cleanPlate]
+        );
+        updatedRows.push({ row: i + 1, plate: cleanPlate, status: "updated" });
+      } else {
+        // ----- INSERT NEW POLICY -----
+        const result = await query(
+          `INSERT INTO policies (plate, owner, company, start_date, expiry_date, contact)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [cleanPlate, cleanOwner, cleanCompany, start_date, expiry_date, cleanContact]
+        );
+        insertedRows.push({ row: i + 1, id: result.insertId, plate: cleanPlate });
       }
-
-      // ----- Insert valid policy -----
-      const result = await query(
-        `INSERT INTO policies (plate, owner, company, start_date, expiry_date, contact)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [cleanPlate, cleanOwner, cleanCompany, start_date, expiry_date, cleanContact]
-      );
-
-      insertedRows.push({ row: i + 1, id: result.insertId, data: policies[i] });
 
     } catch (err) {
-      skippedRows.push({
-        row: i + 1,
-        reason: "Database error: " + err.message,
-        data: policies[i]
-      });
+      skippedRows.push({ row: i + 1, reason: "Database error: " + err.message, data: policies[i] });
     }
   }
 
-  // ----- Friendly summary for frontend -----
-  let message = "";
-  if (insertedRows.length === 0) {
-    message = "No new policies were imported. All rows were invalid or duplicates.";
-  } else if (skippedRows.length === 0) {
-    message = `${insertedRows.length} policies imported successfully!`;
-  } else {
-    message = `${insertedRows.length} policies imported, ${skippedRows.length} rows skipped due to errors or duplicates.`;
-  }
+  // 3. Build a smart summary message
+  const totalProcessed = insertedRows.length + updatedRows.length;
+  let summary = `Processed ${totalProcessed} policies. (${insertedRows.length} new, ${updatedRows.length} updated).`;
+  if (skippedRows.length > 0) summary += ` ${skippedRows.length} rows skipped.`;
 
   res.json({
-    success: insertedRows.length > 0,
-    message,
+    success: true,
+    message: summary,
     totalRows: policies.length,
     inserted: insertedRows.length,
+    updated: updatedRows.length,
     skipped: skippedRows.length,
-    insertedRows, // show valid inserted rows in frontend
-    skippedRows   // show skipped rows with reasons in frontend
+    skippedRows
   });
 });
 // --- ADVERTISEMENT SYSTEM API ---

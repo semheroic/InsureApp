@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { 
   Send, CheckCircle, Clock, XCircle, 
   Search, X, RotateCcw, Shield, Download, 
-  Phone, Loader2, User, Smartphone 
+  Phone, Loader2, User, Smartphone, Copy, Check, Languages
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,9 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -70,6 +73,12 @@ export const PolicyTable = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [selectedPolicy, setSelectedPolicy] = useState<any>(null);
+  
+  // Message Modal States
+  const [messagePolicy, setMessagePolicy] = useState<any>(null);
+  const [lang, setLang] = useState<"rw" | "en">("rw");
+  const [editedMessage, setEditedMessage] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const filteredData = useMemo(() => {
     const term = searchQuery.toLowerCase().trim();
@@ -81,7 +90,51 @@ export const PolicyTable = ({
     );
   }, [data, searchQuery]);
 
-  // FIX: This function now correctly identifies the policy_id regardless of which page you are on
+  // Generate Dynamic Message
+  const generateMessage = (policy: any, language: "rw" | "en") => {
+    if (!policy) return "";
+    const name = policy.owner || "Client";
+    const plate = policy.plate || "";
+    const days = policy.days_overdue || 0;
+    
+    // Determine Timeframe
+    let timeframe = "soon"; 
+    if (days === 0) timeframe = "today";
+    else if (days < 0) timeframe = "expired";
+    else if (days <= 7) timeframe = "week";
+    else timeframe = "month";
+
+    const messages = {
+      rw: {
+        today: `Muraho ${name}, Ubwishingizi bw’ikinyabiziga ${plate} burasohora uyu munsi. Niba mwifuza kubuvugurura, mutwoherere ubutumwa cyangwa mwigere ku biro byacu. Murakoze.`,
+        week: `Muraho ${name}, Ubwishingizi bw’ikinyabiziga ${plate} buzasohora mu minsi ${days} isigaye. Niba mwifuza kubuvugurura natwe, mutwoherere nimero ya telefoni izakoreshwa mu kwishyura. Murakoze.`,
+        month: `Muraho ${name}, Ubwishingizi bw’ikinyabiziga ${plate} buzasohora muri uku kwezi. Twifuje kubibutsa kare kugira ngo mutazatinda kubuvugurura. Murakoze.`,
+        expired: `Muraho ${name}, Ubwishingizi bw’ikinyabiziga ${plate} bwarangiye hashize iminsi ${Math.abs(days)}. Mwibuke kubuvugurura vuba kugira ngo mwirinde ibihano. Murakoze.`
+      },
+      en: {
+        today: `Hello ${name}, your insurance for ${plate} expires today. Please contact us to renew it immediately. Thank you.`,
+        week: `Hello ${name}, your insurance for ${plate} will expire in ${days} days. Send us your phone number if you'd like to renew with us. Thank you.`,
+        month: `Hello ${name}, this is a reminder that your insurance for ${plate} is due for renewal this month. Thank you.`,
+        expired: `Hello ${name}, your insurance for ${plate} expired ${Math.abs(days)} days ago. Please renew it as soon as possible. Thank you.`
+      }
+    };
+
+    return messages[language][timeframe as keyof typeof messages['en']];
+  };
+
+  const handleOpenMessage = (policy: any) => {
+    setMessagePolicy(policy);
+    setEditedMessage(generateMessage(policy, "rw"));
+    setLang("rw");
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(editedMessage);
+    setCopied(true);
+    toast({ title: "Copied to clipboard" });
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const handleFollowUp = async (policy: any, status: string) => {
     const actualPolicyId = policy.policy_id || policy.id;
     setLoadingId(`${policy.id}-${status}`);
@@ -110,7 +163,6 @@ export const PolicyTable = ({
     }
   };
 
-  // FIX: DELETE now targets policy_id from the URL params as expected by your backend
   const handleClear = async (policy: any) => {
     const actualPolicyId = policy.policy_id || policy.id;
     setLoadingId(`${policy.id}-clear`);
@@ -156,6 +208,7 @@ export const PolicyTable = ({
 
   return (
     <div className="space-y-6 font-sans">
+      {/* Contact Info Dialog */}
       <Dialog open={!!selectedPolicy} onOpenChange={() => setSelectedPolicy(null)}>
         <DialogContent className="sm:max-w-[400px] rounded-[24px] border-slate-200 dark:border-slate-800">
           <DialogHeader>
@@ -190,6 +243,85 @@ export const PolicyTable = ({
         </DialogContent>
       </Dialog>
 
+      {/* NEW: Send Message Dialog */}
+      <Dialog open={!!messagePolicy} onOpenChange={() => setMessagePolicy(null)}>
+        <DialogContent className="sm:max-w-[500px] rounded-[32px] border-none shadow-2xl p-0 overflow-hidden">
+          <div className="bg-slate-900 p-6 text-white">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-2xl bg-blue-500 flex items-center justify-center">
+                  <Send size={20} className="text-white" />
+                </div>
+                <div>
+                  <DialogTitle className="text-lg font-bold">Draft Message</DialogTitle>
+                  <p className="text-slate-400 text-xs">Policy: {messagePolicy?.plate}</p>
+                </div>
+              </div>
+              <Badge variant="outline" className="border-slate-700 text-blue-400 bg-blue-500/10 px-3 py-1">
+                Professional Mode
+              </Badge>
+            </div>
+
+            <Tabs value={lang} onValueChange={(v: any) => {
+              setLang(v);
+              setEditedMessage(generateMessage(messagePolicy, v));
+            }} className="w-full">
+              <TabsList className="bg-slate-800/50 border border-slate-700 p-1 rounded-xl w-full">
+                <TabsTrigger value="rw" className="flex-1 rounded-lg gap-2 data-[state=active]:bg-blue-600">
+                  <Languages size={14} /> Kinyarwanda
+                </TabsTrigger>
+                <TabsTrigger value="en" className="flex-1 rounded-lg gap-2 data-[state=active]:bg-blue-600">
+                   English
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+
+          <div className="p-6 bg-white dark:bg-slate-950 space-y-6">
+            <div className="relative group">
+              <Textarea
+                className="min-h-[180px] rounded-2xl border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-4 text-[14px] leading-relaxed resize-none focus-visible:ring-blue-500 transition-all"
+                value={editedMessage}
+                onChange={(e) => setEditedMessage(e.target.value)}
+                placeholder="Write your message here..."
+              />
+              <div className="absolute bottom-3 right-3 flex gap-2">
+                 <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setEditedMessage(generateMessage(messagePolicy, lang))}
+                  className="h-8 rounded-lg text-[10px] font-bold uppercase tracking-wider"
+                >
+                  <RotateCcw size={12} className="mr-1" /> Reset
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <Button
+                onClick={handleCopy}
+                variant="outline"
+                className="flex-1 h-12 rounded-2xl border-slate-200 dark:border-slate-800 font-bold uppercase text-[11px] tracking-[0.1em] gap-2"
+              >
+                {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                {copied ? "Copied!" : "Copy to Clipboard"}
+              </Button>
+              <Button
+                onClick={() => {
+                  handleCopy();
+                  toast({ title: "Ready to Paste" });
+                  setMessagePolicy(null);
+                }}
+                className="flex-1 h-12 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold uppercase text-[11px] tracking-[0.1em] gap-2 shadow-lg shadow-blue-200 dark:shadow-none"
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Header Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         {searchable && (
           <div className="relative flex items-center flex-1 max-w-md group">
@@ -218,6 +350,7 @@ export const PolicyTable = ({
         </Button>
       </div>
 
+      {/* Table Section */}
       <div className="rounded-[24px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
@@ -337,7 +470,7 @@ export const PolicyTable = ({
                         <Button 
                           size="icon" 
                           className="h-9 w-9 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 shadow-sm"
-                          onClick={() => toast({ title: "Reminder Sent" })}
+                          onClick={() => handleOpenMessage(policy)}
                         >
                           <Send size={15} strokeWidth={2.5} />
                         </Button>

@@ -33,7 +33,7 @@ CREATE TABLE `advertisements` (
   `is_active` tinyint(1) DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -42,7 +42,7 @@ CREATE TABLE `advertisements` (
 
 LOCK TABLES `advertisements` WRITE;
 /*!40000 ALTER TABLE `advertisements` DISABLE KEYS */;
-INSERT INTO `advertisements` VALUES (5,'postermywall','image','https://d1csarkz8obe9u.cloudfront.net/posterpreviews/professional-auto-motor-vehicle-car-insurance-design-template-281c21cfc1cf46694004db594a0dda2e_screen.jpg?ts=1738314139','Professional Auto Motor vehicle car Insurance Covers offer deals online advertisement flyer template','Learn More','https://www.postermywall.com/',1,'2026-01-18 12:56:26');
+INSERT INTO `advertisements` VALUES (5,'postermywall','image','https://d1csarkz8obe9u.cloudfront.net/posterpreviews/professional-auto-motor-vehicle-car-insurance-design-template-281c21cfc1cf46694004db594a0dda2e_screen.jpg?ts=1738314139','Professional Auto Motor vehicle car Insurance Covers offer deals online advertisement flyer template','Learn More','https://www.postermywall.com/',1,'2026-01-18 12:56:26'),(6,'Car creative design ideas by Roku®','video','/uploads/profile_1768827323392.mp4','Car creative design ideas ','Learn More','https://www.pinterest.com/pin/291256300921616690/',1,'2026-01-19 12:55:23'),(7,'Toyota','video','/uploads/profile_1768828341877.mp4','Drive Toyota','Learn More','https://www.toyotarwanda.com/',1,'2026-01-19 13:12:21');
 /*!40000 ALTER TABLE `advertisements` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -99,7 +99,7 @@ CREATE TABLE `expiredreport` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `unique_policy` (`policy_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=99 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -108,7 +108,7 @@ CREATE TABLE `expiredreport` (
 
 LOCK TABLES `expiredreport` WRITE;
 /*!40000 ALTER TABLE `expiredreport` DISABLE KEYS */;
-INSERT INTO `expiredreport` VALUES (85,193,'RAD234B','heroic','RADIANT','2026-01-02','2026-01-06','0798367330',0,'2026-01-02 09:46:22','2026-01-02 09:46:22'),(86,194,'RAD234B','heroic','RADIANT','2026-01-02','2026-01-02','0798367330',0,'2026-01-02 09:54:07','2026-01-02 09:54:07'),(87,195,'RAD234p','AIME','RADIANT','2026-01-02','2026-01-21','0798367330',0,'2026-01-02 09:55:26','2026-01-02 09:55:26'),(88,196,'RAD234i','heroic','RADIANT','2026-01-02','2026-01-02','0798367330',0,'2026-01-02 10:11:48','2026-01-02 10:11:48'),(89,197,'RAD234i','heroic','RADIANT','2026-01-02','2026-01-02','0798367330',0,'2026-01-02 15:04:40','2026-01-02 15:04:40'),(90,199,'RAD234t','heroic','SONARWA','2026-01-03','2026-01-21','0798367333',0,'2026-01-03 08:42:08','2026-01-03 08:42:08'),(91,200,'RAD234z','heroic','RADIANT','2026-01-03','2026-01-05','0798345678',0,'2026-01-03 10:59:07','2026-01-03 10:59:07'),(92,201,'RAD234p','heroic','RADIANT','2026-01-03','2026-01-03','0789876543',0,'2026-01-03 12:50:10','2026-01-03 12:50:10'),(93,202,'RAD234i','heroic','RADIANT','2026-01-03','2026-01-12','0786543298',0,'2026-01-03 15:46:17','2026-01-03 15:46:17'),(94,203,'RAD234p','AIME','RADIANT','2026-01-10','2026-01-22','0798456784',0,'2026-01-10 13:12:13','2026-01-10 13:12:13'),(95,204,'RAB123t','Alice','SORAS','2026-01-12','2026-07-12','+250789123456',0,'2026-01-17 18:08:49','2026-01-17 18:08:49'),(96,205,'RAC456q','Bob','SONARWA','2026-02-01','2026-08-01','+250789876543',0,'2026-01-17 18:08:49','2026-01-17 18:08:49'),(97,206,'RAD789w','Heroic','RADIANT','2026-01-10','2026-01-22','+250789456784',0,'2026-01-17 18:08:49','2026-01-17 18:08:49'),(98,207,'RAD789x','Heroic','RADIANT','2026-01-10','2026-01-22','+250789456784',0,'2026-01-17 18:30:28','2026-01-17 18:30:28');
+INSERT INTO `expiredreport` VALUES (85,193,'RAD234B','heroic','RADIANT','2026-01-02','2026-01-06','0798367330',0,'2026-01-02 09:46:22','2026-01-02 09:46:22'),(86,194,'RAD234B','heroic','RADIANT','2026-01-02','2026-01-02','0798367330',0,'2026-01-02 09:54:07','2026-01-02 09:54:07'),(87,195,'RAD234p','AIME','RADIANT','2026-01-02','2026-01-21','0798367330',0,'2026-01-02 09:55:26','2026-01-02 09:55:26'),(88,196,'RAD234i','heroic','RADIANT','2026-01-02','2026-01-02','0798367330',0,'2026-01-02 10:11:48','2026-01-02 10:11:48'),(89,197,'RAD234i','heroic','RADIANT','2026-01-02','2026-01-02','0798367330',0,'2026-01-02 15:04:40','2026-01-02 15:04:40'),(90,199,'RAD234t','heroic','SONARWA','2026-01-03','2026-01-21','0798367333',0,'2026-01-03 08:42:08','2026-01-03 08:42:08'),(91,200,'RAD234z','heroic','RADIANT','2026-01-03','2026-01-05','0798345678',0,'2026-01-03 10:59:07','2026-01-03 10:59:07'),(92,201,'RAD234p','heroic','RADIANT','2026-01-03','2026-01-03','0789876543',0,'2026-01-03 12:50:10','2026-01-03 12:50:10'),(93,202,'RAD234i','heroic','RADIANT','2026-01-03','2026-01-12','0786543298',0,'2026-01-03 15:46:17','2026-01-03 15:46:17'),(94,203,'RAD234p','AIME','RADIANT','2026-01-10','2026-01-22','0798456784',0,'2026-01-10 13:12:13','2026-01-10 13:12:13'),(95,204,'RAB123t','Alice','SORAS','2026-01-12','2026-07-12','+250789123456',0,'2026-01-17 18:08:49','2026-01-17 18:08:49'),(96,205,'RAC456q','Bob','SONARWA','2026-02-01','2026-08-01','+250789876543',0,'2026-01-17 18:08:49','2026-01-17 18:08:49'),(97,206,'RAD789w','Heroic','RADIANT','2026-01-10','2026-01-22','+250789456784',0,'2026-01-17 18:08:49','2026-01-17 18:08:49'),(98,207,'RAD789x','Heroic','RADIANT','2026-01-10','2026-01-22','+250789456784',0,'2026-01-17 18:30:28','2026-01-17 18:30:28'),(99,208,'RAD234t','heroic','SONARWA','2026-01-19','2026-01-29','0798345667',0,'2026-01-19 13:50:00','2026-01-19 13:50:00'),(100,209,'RAD234t','heroic','SONARWA','2026-01-19','2026-01-19','0798367330',0,'2026-01-19 14:38:54','2026-01-19 14:38:54');
 /*!40000 ALTER TABLE `expiredreport` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -139,7 +139,6 @@ CREATE TABLE `followups` (
 
 LOCK TABLES `followups` WRITE;
 /*!40000 ALTER TABLE `followups` DISABLE KEYS */;
-INSERT INTO `followups` VALUES (115,203,'confirmed',NULL,'2026-01-18 10:42:58'),(116,199,'pending',NULL,'2026-01-18 10:43:00'),(117,206,'missed',NULL,'2026-01-18 10:43:03'),(118,207,'confirmed',NULL,'2026-01-18 10:43:07');
 /*!40000 ALTER TABLE `followups` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -191,7 +190,7 @@ CREATE TABLE `policies` (
   KEY `idx_contact` (`contact`),
   KEY `idx_expiry_date` (`expiry_date`),
   KEY `idx_company` (`company`)
-) ENGINE=InnoDB AUTO_INCREMENT=208 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=210 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -200,7 +199,7 @@ CREATE TABLE `policies` (
 
 LOCK TABLES `policies` WRITE;
 /*!40000 ALTER TABLE `policies` DISABLE KEYS */;
-INSERT INTO `policies` VALUES (199,'RAD234a','heroic','SONARWA','2026-01-03','2026-01-21','0798367333','2026-01-03 08:42:08','2026-01-10 14:33:11',0),(202,'RAD234i','heroic','RADIANT','2026-01-03','2026-01-03','0786543298','2026-01-03 15:46:17','2026-01-03 16:13:29',0),(203,'RAD234p','AIME','RADIANT','2026-01-10','2026-01-22','0798456784','2026-01-10 13:12:13','2026-01-10 13:12:13',0),(204,'RAB123t','Alice','SORAS','2026-01-12','2026-07-12','+250789123456','2026-01-17 18:08:49','2026-01-17 18:08:49',0),(205,'RAC456q','Bob','SONARWA','2026-02-01','2026-08-01','+250789876543','2026-01-17 18:08:49','2026-01-17 18:08:49',0),(206,'RAD789w','Heroic','RADIANT','2026-01-10','2026-01-22','+250789456784','2026-01-17 18:08:49','2026-01-17 18:08:49',0),(207,'RAD789x','Heroic','RADIANT','2026-01-10','2026-01-22','+250789456784','2026-01-17 18:30:28','2026-01-17 18:30:28',0);
+INSERT INTO `policies` VALUES (209,'RAD234t','heroic','SONARWA','2026-01-19','2026-01-19','0798367330','2026-01-19 14:38:54','2026-01-19 14:38:54',0);
 /*!40000 ALTER TABLE `policies` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
@@ -256,7 +255,7 @@ CREATE TABLE `policy_history` (
   KEY `idx_expiry` (`expiry_date`),
   KEY `idx_renewed` (`renewed_date`),
   CONSTRAINT `policy_history_ibfk_1` FOREIGN KEY (`policy_id`) REFERENCES `policies` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=60 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=61 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -265,7 +264,6 @@ CREATE TABLE `policy_history` (
 
 LOCK TABLES `policy_history` WRITE;
 /*!40000 ALTER TABLE `policy_history` DISABLE KEYS */;
-INSERT INTO `policy_history` VALUES (55,202,'2026-01-12','2026-01-03','2026-01-03 16:13:29','2026-01-03 16:13:29'),(56,202,'2026-01-03',NULL,'2026-01-04 16:53:27','2026-01-04 16:53:27'),(57,199,'2026-01-21','2026-01-10','2026-01-10 14:32:59','2026-01-10 14:32:59'),(58,199,'2026-01-21','2026-01-10','2026-01-10 14:33:05','2026-01-10 14:33:05'),(59,199,'2026-01-21','2026-01-10','2026-01-10 14:33:11','2026-01-10 14:33:11');
 /*!40000 ALTER TABLE `policy_history` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -290,7 +288,7 @@ CREATE TABLE `sessions` (
 
 LOCK TABLES `sessions` WRITE;
 /*!40000 ALTER TABLE `sessions` DISABLE KEYS */;
-INSERT INTO `sessions` VALUES ('cRHAoW7bOM1nlUAW_-p0YBemuqnAKzkc',1768770192,'{\"cookie\":{\"originalMaxAge\":28800000,\"expires\":\"2026-01-18T20:59:23.582Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"userId\":73,\"userRole\":\"Admin\"}');
+INSERT INTO `sessions` VALUES ('SABoCHTbKgaWQUPOiyiXTpQMRoYenwp-',1768863242,'{\"cookie\":{\"originalMaxAge\":28800000,\"expires\":\"2026-01-19T22:51:55.370Z\",\"secure\":false,\"httpOnly\":true,\"path\":\"/\",\"sameSite\":\"lax\"},\"userId\":73,\"userRole\":\"Admin\"}');
 /*!40000 ALTER TABLE `sessions` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -396,4 +394,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-18  5:05:00
+-- Dump completed on 2026-01-19  7:21:57

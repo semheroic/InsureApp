@@ -90,36 +90,18 @@ export const PolicyTable = ({
     );
   }, [data, searchQuery]);
 
-  // Generate Dynamic Message
+  // UPDATED: Message generator with your specific Kinyarwanda text
   const generateMessage = (policy: any, language: "rw" | "en") => {
     if (!policy) return "";
     const name = policy.owner || "Client";
     const plate = policy.plate || "";
-    const days = policy.days_overdue || 0;
-    
-    // Determine Timeframe
-    let timeframe = "soon"; 
-    if (days === 0) timeframe = "today";
-    else if (days < 0) timeframe = "expired";
-    else if (days <= 7) timeframe = "week";
-    else timeframe = "month";
 
     const messages = {
-      rw: {
-        today: `Muraho ${name}, Ubwishingizi bw’ikinyabiziga ${plate} burasohora uyu munsi. Niba mwifuza kubuvugurura, mutwoherere ubutumwa cyangwa mwigere ku biro byacu. Murakoze.`,
-        week: `Muraho ${name}, Ubwishingizi bw’ikinyabiziga ${plate} buzasohora mu minsi ${days} isigaye. Niba mwifuza kubuvugurura natwe, mutwoherere nimero ya telefoni izakoreshwa mu kwishyura. Murakoze.`,
-        month: `Muraho ${name}, Ubwishingizi bw’ikinyabiziga ${plate} buzasohora muri uku kwezi. Twifuje kubibutsa kare kugira ngo mutazatinda kubuvugurura. Murakoze.`,
-        expired: `Muraho ${name}, Ubwishingizi bw’ikinyabiziga ${plate} bwarangiye hashize iminsi ${Math.abs(days)}. Mwibuke kubuvugurura vuba kugira ngo mwirinde ibihano. Murakoze.`
-      },
-      en: {
-        today: `Hello ${name}, your insurance for ${plate} expires today. Please contact us to renew it immediately. Thank you.`,
-        week: `Hello ${name}, your insurance for ${plate} will expire in ${days} days. Send us your phone number if you'd like to renew with us. Thank you.`,
-        month: `Hello ${name}, this is a reminder that your insurance for ${plate} is due for renewal this month. Thank you.`,
-        expired: `Hello ${name}, your insurance for ${plate} expired ${Math.abs(days)} days ago. Please renew it as soon as possible. Thank you.`
-      }
+      rw: `Muraho neza ${name},\nTwishimiye kubamenyesha ko ubwishingizi bwa ${plate} buri burangire uyu munsi.\nNiba mwifuza gukomeza gukorana natwe, mutwoherereze nimero ikoreshwa mu kwishyura, cyangwa mutubaze aho mukeneye ibisobanuro.\nTurabashimiye cyane.`,
+      en: `Hello ${name},\nWe are pleased to inform you that the insurance for ${plate} is expiring today.\nIf you would like to continue working with us, please send us the phone number to be used for payment, or ask us if you need any clarification.\nThank you very much.`
     };
 
-    return messages[language][timeframe as keyof typeof messages['en']];
+    return messages[language];
   };
 
   const handleOpenMessage = (policy: any) => {
@@ -133,6 +115,29 @@ export const PolicyTable = ({
     setCopied(true);
     toast({ title: "Copied to clipboard" });
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  // NEW: Optimized WhatsApp redirect with forced 250 format
+  const handleWhatsAppRedirect = () => {
+    if (!messagePolicy) return;
+    
+    // Clean all non-digits
+    let digits = messagePolicy.contact.replace(/\D/g, "");
+    
+    // Apply Rwandan format: ensure it starts with 250
+    let cleanNumber;
+    if (digits.startsWith("250")) {
+      cleanNumber = digits;
+    } else if (digits.startsWith("0")) {
+      cleanNumber = "250" + digits.substring(1);
+    } else {
+      cleanNumber = "250" + digits;
+    }
+
+    const encodedMsg = encodeURIComponent(editedMessage);
+    const whatsappUrl = `https://wa.me/${cleanNumber}?text=${encodedMsg}`;
+    
+    window.open(whatsappUrl, "_blank");
   };
 
   const handleFollowUp = async (policy: any, status: string) => {
@@ -243,7 +248,7 @@ export const PolicyTable = ({
         </DialogContent>
       </Dialog>
 
-      {/* NEW: Send Message Dialog */}
+      {/* Message Dialog */}
       <Dialog open={!!messagePolicy} onOpenChange={() => setMessagePolicy(null)}>
         <DialogContent className="sm:max-w-[500px] rounded-[32px] border-none shadow-2xl p-0 overflow-hidden">
           <div className="bg-slate-900 p-6 text-white">
@@ -297,25 +302,32 @@ export const PolicyTable = ({
               </div>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex flex-col gap-3">
+              {/* WhatsApp Button */}
               <Button
-                onClick={handleCopy}
-                variant="outline"
-                className="flex-1 h-12 rounded-2xl border-slate-200 dark:border-slate-800 font-bold uppercase text-[11px] tracking-[0.1em] gap-2"
+                onClick={handleWhatsAppRedirect}
+                className="w-full h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold uppercase text-[11px] tracking-[0.1em] gap-2 shadow-lg shadow-emerald-200 dark:shadow-none"
               >
-                {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
-                {copied ? "Copied!" : "Copy to Clipboard"}
+                <Smartphone size={16} />
+                Send via WhatsApp
               </Button>
-              <Button
-                onClick={() => {
-                  handleCopy();
-                  toast({ title: "Ready to Paste" });
-                  setMessagePolicy(null);
-                }}
-                className="flex-1 h-12 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold uppercase text-[11px] tracking-[0.1em] gap-2 shadow-lg shadow-blue-200 dark:shadow-none"
-              >
-                Done
-              </Button>
+
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleCopy}
+                  variant="outline"
+                  className="flex-1 h-12 rounded-2xl border-slate-200 dark:border-slate-800 font-bold uppercase text-[11px] tracking-[0.1em] gap-2"
+                >
+                  {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                  {copied ? "Copied!" : "Copy Text"}
+                </Button>
+                <Button
+                  onClick={() => setMessagePolicy(null)}
+                  className="flex-1 h-12 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold uppercase text-[11px] tracking-[0.1em]"
+                >
+                  Done
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
@@ -350,7 +362,7 @@ export const PolicyTable = ({
         </Button>
       </div>
 
-      {/* Table Section */}
+      {/* Table */}
       <div className="rounded-[24px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
         <Table>
           <TableHeader>

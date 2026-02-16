@@ -57,7 +57,7 @@ console.log("MYSQLHOST exists:", !!process.env.MYSQLHOST);
 const isProduction = process.env.NODE_ENV === "production";
 
 const db = mysql.createPool({
-  host: "localhost",            // Replace with your MySQL host
+  host: "152.53.204.199",            // Replace with your MySQL host
   user: "brightcoveragenc_brightcoveragenc",                 // Replace with your DB username
   password: "Insure@12345",     // Replace with your DB password
   database: "brightcoveragenc_InsureApp", // Your database name
@@ -69,6 +69,15 @@ const db = mysql.createPool({
   multipleStatements: true,
   connectTimeout: 60000,
 });
+db.getConnection((err, connection) => {
+  if (err) {
+    console.error("DB Connection Error:", err);
+    return;
+  }
+  console.log("✅ Database connected!");
+  connection.release();
+});
+
 const query = util.promisify(db.query).bind(db);
 console.log("DB MODE:", isProduction ? "Railway" : "Local");
 

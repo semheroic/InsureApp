@@ -57,9 +57,9 @@ console.log("MYSQLHOST exists:", !!process.env.MYSQLHOST);
 const isProduction = process.env.NODE_ENV === "production";
 
 const db = mysql.createPool({
-  host: "ns1.washahost.com",            // Replace with your MySQL host
-  user: "brightcoveragenc_brightcoveragenc",                 // Replace with your DB username
-  password: "Insure@12345",     // Replace with your DB password
+  host: "localhost",            // Replace with your MySQL host
+  user: "brightcoveragenc_root",                 // Replace with your DB username
+  password: "himbazasemheroic",     // Replace with your DB password
   database: "brightcoveragenc_InsureApp", // Your database name
   port: 3306,                   // Replace if your MySQL uses a different port
 

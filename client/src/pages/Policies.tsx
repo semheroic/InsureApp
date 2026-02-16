@@ -636,7 +636,8 @@ const counts = useMemo(() => {
           </Button>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-border">
+        <div className="relative rounded-lg border border-border overflow-x-auto">
+          <div className="min-w-[900px]">
           <Table>
             <TableHeader>
               <TableRow>
@@ -710,6 +711,7 @@ const counts = useMemo(() => {
               ))}
             </TableBody>
           </Table>
+          </div>
         </div>
         <div className="flex items-center justify-between px-2 py-4 border-t bg-slate-50/50 dark:bg-slate-900/50">
           {/* Status Number Text */}

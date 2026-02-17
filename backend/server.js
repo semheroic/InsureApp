@@ -29,7 +29,8 @@ app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 const allowedOrigins = [
   "https://insure-app-olive.vercel.app",
   "http://localhost:8080",
-  "https://brightcoveragency.com"
+  'https://www.brightcoveragency.com',
+  'https://brightcoveragency.com'
 ];
 
 app.use(cors({

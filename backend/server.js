@@ -28,7 +28,8 @@ app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 // ======================== MIDDLEWARE ========================
 const allowedOrigins = [
   "https://insure-app-olive.vercel.app",
-  "http://localhost:8080"
+  "http://localhost:8080",
+  "https://brightcoveragency.com"
 ];
 
 app.use(cors({
@@ -56,11 +57,12 @@ console.log("ENV:", process.env.NODE_ENV);
 console.log("MYSQLHOST exists:", !!process.env.MYSQLHOST);
 const isProduction = process.env.NODE_ENV === "production";
 
+
 const db = mysql.createPool({
   host: "localhost",            // Replace with your MySQL host
   user: "brightcoveragenc_root",                 // Replace with your DB username
   password: "himbazasemheroic",     // Replace with your DB password
-  database: "brightcoveragenc_InsureApp", // Your database name
+  database:"brightcoveragenc_InsureApp", // Your database name
   port: 3306,                   // Replace if your MySQL uses a different port
 
   waitForConnections: true,
@@ -95,6 +97,7 @@ const sessionStore = new MySQLStore(
 
 app.set("trust proxy", 1); 
 
+
 app.use(session({
   key: "insureapp_session",
   secret: process.env.SESSION_SECRET || "supersecretkey",
@@ -104,12 +107,11 @@ app.use(session({
   cookie: {
     maxAge: 1000 * 60 * 60 * 8, // 8 hours
     httpOnly: true,
-    // Only use secure cookies in production (HTTPS)
-    secure: isProduction, 
-    // Use 'none' for cross-site (Production), 'lax' for same-site (Localhost)
-    sameSite: isProduction ? "none" : "lax"
+    secure: isProduction,       // true in production (HTTPS), false locally
+    sameSite: isProduction ? "none" : "lax" // cross-site for prod, lax for dev
   }
 }));
+
 
 // ======================== EMAIL ========================
 const transporter = nodemailer.createTransport({

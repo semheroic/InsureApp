@@ -1,5 +1,6 @@
-
- require("dotenv").config();
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv").config();
+}
 const express = require("express");
 const cors = require("cors");
 const mysql = require("mysql2");
@@ -27,22 +28,26 @@ const upload = multer({ storage });
 app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 // ======================== MIDDLEWARE ========================
 const allowedOrigins = [
+  "https://www.brightcoveragency.com",
+  "https://brightcoveragency.com",
   "https://insure-app-olive.vercel.app",
-  "http://localhost:8080",
-  'https://www.brightcoveragency.com',
-  'https://brightcoveragency.com'
+  "http://localhost:8080"
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl requests)
+
+    // allow server-to-server or curl requests
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
     }
+
+    console.log("Blocked CORS origin:", origin);
+
+    // IMPORTANT: do NOT throw error
+    return callback(null, false);
   },
   credentials: true
 }));
@@ -57,14 +62,12 @@ app.use(bodyParser.urlencoded({ extended: true }));
 console.log("ENV:", process.env.NODE_ENV);
 console.log("MYSQLHOST exists:", !!process.env.MYSQLHOST);
 const isProduction = process.env.NODE_ENV === "production";
-
-
 const db = mysql.createPool({
-  host: "localhost",            // Replace with your MySQL host
-  user: "brightcoveragenc_root",                 // Replace with your DB username
-  password: "himbazasemheroic",     // Replace with your DB password
-  database:"brightcoveragenc_InsureApp", // Your database name
-  port: 3306,                   // Replace if your MySQL uses a different port
+  host: isProduction ? process.env.MYSQLHOST : process.env.DB_HOST,
+  user: isProduction ? process.env.MYSQLUSER : process.env.DB_USER,
+  password: isProduction ? process.env.MYSQLPASSWORD : process.env.DB_PASS,
+  database: isProduction ? process.env.MYSQLDATABASE : process.env.DB_NAME,
+  port: isProduction ? process.env.MYSQLPORT : process.env.DB_PORT || 3306,
 
   waitForConnections: true,
   connectionLimit: 10,
@@ -72,15 +75,6 @@ const db = mysql.createPool({
   multipleStatements: true,
   connectTimeout: 60000,
 });
-db.getConnection((err, connection) => {
-  if (err) {
-    console.error("DB Connection Error:", err);
-    return;
-  }
-  console.log("✅ Database connected!");
-  connection.release();
-});
-
 const query = util.promisify(db.query).bind(db);
 console.log("DB MODE:", isProduction ? "Railway" : "Local");
 
@@ -94,22 +88,19 @@ const sessionStore = new MySQLStore(
   },
   db
 );
-
-
 app.set("trust proxy", 1); 
-
 
 app.use(session({
   key: "insureapp_session",
-  secret: process.env.SESSION_SECRET || "supersecretkey",
+  secret: process.env.SESSION_SECRET,
   store: sessionStore,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    maxAge: 1000 * 60 * 60 * 8, // 8 hours
+    maxAge: 1000 * 60 * 60 * 8,
     httpOnly: true,
-    secure: isProduction,       // true in production (HTTPS), false locally
-    sameSite: isProduction ? "none" : "lax" // cross-site for prod, lax for dev
+    secure: isProduction,   // secure only in production
+    sameSite: isProduction ? "none" : "lax"
   }
 }));
 

@@ -2,7 +2,8 @@ import { useState, useMemo } from "react";
 import { 
   Send, CheckCircle, Clock, XCircle, 
   Search, X, RotateCcw, Shield, Download, 
-  Phone, Loader2, User, Smartphone, Copy, Check, Languages
+  Phone, Loader2, User, Smartphone, Copy, Check, Languages,
+  ChevronLeft, ChevronRight 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,6 +75,10 @@ export const PolicyTable = ({
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [selectedPolicy, setSelectedPolicy] = useState<any>(null);
   
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const recordsPerPage = 10;
+
   // Message Modal States
   const [messagePolicy, setMessagePolicy] = useState<any>(null);
   const [lang, setLang] = useState<"rw" | "en">("rw");
@@ -82,15 +87,26 @@ export const PolicyTable = ({
 
   const filteredData = useMemo(() => {
     const term = searchQuery.toLowerCase().trim();
-    if (!term) return data;
-    return data.filter((p: any) => 
-      String(p.plate).toLowerCase().includes(term) || 
-      String(p.contact).toLowerCase().includes(term) ||
-      String(p.owner).toLowerCase().includes(term)
-    );
+    const results = !term 
+      ? data 
+      : data.filter((p: any) => 
+          String(p.plate).toLowerCase().includes(term) || 
+          String(p.contact).toLowerCase().includes(term) ||
+          String(p.owner).toLowerCase().includes(term)
+        );
+    
+    // Reset to page 1 when searching
+    return results;
   }, [data, searchQuery]);
 
-  // UPDATED: Message generator with your specific Kinyarwanda text
+  // Derived Pagination Data
+  const totalPages = Math.ceil(filteredData.length / recordsPerPage);
+  const paginatedData = useMemo(() => {
+    const firstPageIndex = (currentPage - 1) * recordsPerPage;
+    const lastPageIndex = firstPageIndex + recordsPerPage;
+    return filteredData.slice(firstPageIndex, lastPageIndex);
+  }, [filteredData, currentPage]);
+
   const generateMessage = (policy: any, language: "rw" | "en") => {
     if (!policy) return "";
     const name = policy.owner || "Client";
@@ -117,14 +133,9 @@ export const PolicyTable = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // NEW: Optimized WhatsApp redirect with forced 250 format
   const handleWhatsAppRedirect = () => {
     if (!messagePolicy) return;
-    
-    // Clean all non-digits
     let digits = messagePolicy.contact.replace(/\D/g, "");
-    
-    // Apply Rwandan format: ensure it starts with 250
     let cleanNumber;
     if (digits.startsWith("250")) {
       cleanNumber = digits;
@@ -133,27 +144,20 @@ export const PolicyTable = ({
     } else {
       cleanNumber = "250" + digits;
     }
-
     const encodedMsg = encodeURIComponent(editedMessage);
     const whatsappUrl = `https://wa.me/${cleanNumber}?text=${encodedMsg}`;
-    
     window.open(whatsappUrl, "_blank");
   };
 
   const handleFollowUp = async (policy: any, status: string) => {
     const actualPolicyId = policy.policy_id || policy.id;
     setLoadingId(`${policy.id}-${status}`);
-    
     try {
       const res = await fetch(followUpEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          policy_id: actualPolicyId, 
-          followup_status: status 
-        }),
+        body: JSON.stringify({ policy_id: actualPolicyId, followup_status: status }),
       });
-      
       if (res.ok) {
         toast({ title: "Status Updated", description: `Policy ${policy.plate} is now ${status}` });
         refreshData?.();
@@ -171,11 +175,8 @@ export const PolicyTable = ({
   const handleClear = async (policy: any) => {
     const actualPolicyId = policy.policy_id || policy.id;
     setLoadingId(`${policy.id}-clear`);
-    
     try {
-      const res = await fetch(`${API_URL}/api/followup/${actualPolicyId}`, {
-        method: "DELETE"
-      });
+      const res = await fetch(`${API_URL}/api/followup/${actualPolicyId}`, { method: "DELETE" });
       if (res.ok) {
         toast({ title: "Status Reset" });
         refreshData?.();
@@ -200,7 +201,6 @@ export const PolicyTable = ({
       headers.join(","),
       ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
     ].join("\n");
-
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -276,7 +276,7 @@ export const PolicyTable = ({
                   <Languages size={14} /> Kinyarwanda
                 </TabsTrigger>
                 <TabsTrigger value="en" className="flex-1 rounded-lg gap-2 data-[state=active]:bg-blue-600">
-                   English
+                    English
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -303,7 +303,6 @@ export const PolicyTable = ({
             </div>
 
             <div className="flex flex-col gap-3">
-              {/* WhatsApp Button */}
               <Button
                 onClick={handleWhatsAppRedirect}
                 className="w-full h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold uppercase text-[11px] tracking-[0.1em] gap-2 shadow-lg shadow-emerald-200 dark:shadow-none"
@@ -342,10 +341,13 @@ export const PolicyTable = ({
               placeholder="Search records..."
               className="pl-11 h-11 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 rounded-xl text-[14px] font-medium tracking-tight shadow-sm focus-visible:ring-1 focus-visible:ring-slate-400"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1); // Reset to page 1 on search
+              }}
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery("")} className="absolute right-4 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
+              <button onClick={() => {setSearchQuery(""); setCurrentPage(1);}} className="absolute right-4 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
                 <X className="h-4 w-4 text-slate-400" />
               </button>
             )}
@@ -376,8 +378,8 @@ export const PolicyTable = ({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredData.length > 0 ? (
-              filteredData.map((policy: any) => {
+            {paginatedData.length > 0 ? (
+              paginatedData.map((policy: any) => {
                 const status = policy.followup_status;
                 const isClearing = loadingId === `${policy.id}-clear`;
 
@@ -500,6 +502,44 @@ export const PolicyTable = ({
             )}
           </TableBody>
         </Table>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="px-8 py-4 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+              Showing <span className="text-slate-900 dark:text-white">{paginatedData.length}</span> of {filteredData.length} Records
+            </p>
+            
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1">
+                <span className="text-[12px] font-bold text-slate-900 dark:text-white">{currentPage}</span>
+                <span className="text-[12px] font-medium text-slate-400">/</span>
+                <span className="text-[12px] font-medium text-slate-400">{totalPages}</span>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 rounded-xl border-slate-200 dark:border-slate-800 disabled:opacity-30"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft size={16} />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 rounded-xl border-slate-200 dark:border-slate-800 disabled:opacity-30"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  <ChevronRight size={16} />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

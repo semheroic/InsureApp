@@ -488,14 +488,14 @@ const counts = useMemo(() => {
           <h1 className="text-3xl font-bold">Insurance Policies</h1>
           <p className="text-muted-foreground">Manage and track vehicle insurance coverage</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" className="gap-2" onClick={exportToCSV}>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="gap-2 w-full sm:w-auto" onClick={exportToCSV}>
             <Download className="w-4 h-4" /> Export CSV
           </Button>
-         <div className="flex flex-col gap-1">
+         <div className="flex flex-col gap-1 w-full sm:w-auto">
   <Button
     variant="outline"
-    className="gap-2"
+    className="gap-2 w-full sm:w-auto"
     onClick={() => document.getElementById("import-file")?.click()}
   >
     <Download className="w-4 h-4 rotate-180" />
@@ -506,7 +506,7 @@ const counts = useMemo(() => {
   <Button
     variant="ghost"
     size="sm"
-    className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 flex items-center gap-1"
+    className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1 w-full sm:w-auto"
     onClick={() => {
       const headers = ["plate","owner","company","start_date","expiry_date","contact"];
       const csv = [headers].map(r => r.join(",")).join("\n");
@@ -531,21 +531,21 @@ const counts = useMemo(() => {
 />
 
           {isAdmin && (
-            <Button variant="outline" className="gap-2" onClick={() => setIsMessageDialogOpen(true)}>
+            <Button variant="outline" className="gap-2 w-full sm:w-auto" onClick={() => setIsMessageDialogOpen(true)}>
               <Search className="w-4 h-4" /> Broadcast SMS
             </Button>
           )}
           {canModify && (
-            <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}>
+            <Button className="gap-2 w-full sm:w-auto" onClick={() => setIsAddDialogOpen(true)}>
               <Plus className="w-4 h-4" /> Add Policy
             </Button>
           )}
         </div>
       </div>
 
-      <Card className="p-6">
-        <div className="flex flex-wrap gap-4 mb-6 items-center">
-          <div className="flex-1 min-w-[200px] relative">
+      <Card className="p-4 sm:p-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-6 items-center">
+          <div className="relative sm:col-span-2 xl:col-span-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search plate or owner..."
@@ -561,7 +561,7 @@ const counts = useMemo(() => {
                 <Button
                   variant={"outline"}
                   className={cn(
-                    "w-[280px] justify-start text-left font-normal",
+                    "w-full sm:w-[280px] justify-start text-left font-normal",
                     !dateRange?.from && "text-muted-foreground"
                   )}
                 >
@@ -591,7 +591,7 @@ const counts = useMemo(() => {
           </div>
 
           <Select value={dateFilter} onValueChange={setDateFilter}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
                 <CalendarIcon className="w-4 h-4 mr-2 opacity-50" />
                 <SelectValue placeholder="Registration" />
             </SelectTrigger>
@@ -604,7 +604,7 @@ const counts = useMemo(() => {
           </Select>
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status ({counts.all})</SelectItem>
               <SelectItem value="active">Active ({counts.active})</SelectItem>
@@ -615,7 +615,7 @@ const counts = useMemo(() => {
           </Select>
 
           <Select value={companyFilter} onValueChange={setCompanyFilter}>
-            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Company" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Company" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Companies ({counts.all})</SelectItem>
               <SelectItem value="soras">SORAS ({counts.soras})</SelectItem>
@@ -625,7 +625,7 @@ const counts = useMemo(() => {
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="icon" title="Reset Filters" onClick={() => {
+          <Button variant="outline" size="icon" className="w-full sm:w-10" title="Reset Filters" onClick={() => {
               setSearchQuery("");
               setStatusFilter("all");
               setCompanyFilter("all");
@@ -637,7 +637,7 @@ const counts = useMemo(() => {
         </div>
 
         <div className="relative rounded-lg border border-border overflow-x-auto">
-          <div className="min-w-[900px]">
+          <div className="min-w-[760px] sm:min-w-[900px]">
           <Table>
             <TableHeader>
               <TableRow>
@@ -713,7 +713,7 @@ const counts = useMemo(() => {
           </Table>
           </div>
         </div>
-        <div className="flex items-center justify-between px-2 py-4 border-t bg-slate-50/50 dark:bg-slate-900/50">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-2 py-4 border-t bg-slate-50/50 dark:bg-slate-900/50">
           {/* Status Number Text */}
           <div className="text-sm text-muted-foreground">
             Showing {" "}
@@ -729,7 +729,7 @@ const counts = useMemo(() => {
           </div>
           
           {/* Navigation Buttons */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between sm:justify-start gap-4">
             <div className="text-sm font-medium">
               Page {currentPage} of {Math.ceil(filteredPolicies.length / itemsPerPage) || 1}
             </div>
@@ -759,13 +759,13 @@ const counts = useMemo(() => {
       </Card>
       {/* VIEW DIALOG - RESTORED FULL FIELDS */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent>
+        <DialogContent className="w-[calc(100vw-2rem)] sm:w-full">
           <DialogHeader>
             <DialogTitle>Policy Details</DialogTitle>
           </DialogHeader>
           {selectedPolicy && (
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-muted-foreground text-xs uppercase">Plate Number</Label>
                   <p className="font-bold text-lg">{selectedPolicy.plate}</p>
@@ -790,7 +790,7 @@ const counts = useMemo(() => {
                   <Label className="text-muted-foreground text-xs uppercase">Expiry Date</Label>
                   <p className="font-medium">{selectedPolicy.expiry_date}</p>
                 </div>
-                <div className="col-span-2 pt-2 border-t">
+                <div className="sm:col-span-2 pt-2 border-t">
                   <Label className="text-muted-foreground text-xs uppercase">Status Overview</Label>
                   <div className="flex items-center gap-3 mt-1">
                     <Badge className={getStatusBadge(selectedPolicy.status)}>{selectedPolicy.status}</Badge>
@@ -812,7 +812,7 @@ const counts = useMemo(() => {
       
 
 <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-  <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden border-none shadow-2xl rounded-2xl">
+  <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[500px] p-0 overflow-hidden border-none shadow-2xl rounded-2xl max-h-[90vh] overflow-y-auto">
     {/* Header - Added 'relative' class here */}
     <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 p-6 text-white">
       
@@ -844,7 +844,7 @@ const counts = useMemo(() => {
         <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
           Vehicle Information
         </h4>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="plate" className="text-xs font-semibold text-slate-700">Plate Number</Label>
             <div className="relative">
@@ -879,7 +879,7 @@ const counts = useMemo(() => {
         <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
           Coverage Details
         </h4>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-slate-700">Insurance Company</Label>
             <Select value={formData.company} onValueChange={(value) => setFormData({ ...formData, company: value })}>
@@ -912,7 +912,7 @@ const counts = useMemo(() => {
         </div>
 
         {/* SECTION 3: Timeline */}
-        <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100 grid grid-cols-2 gap-4">
+        <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label className="text-[10px] font-bold text-blue-700 uppercase">Effective Date</Label>
             <div className="relative">
@@ -940,7 +940,7 @@ const counts = useMemo(() => {
     </div>
 
     {/* Footer */}
-    <DialogFooter className="p-6 pt-0 bg-background flex flex-row gap-3">
+    <DialogFooter className="p-6 pt-0 bg-background flex flex-col-reverse sm:flex-row gap-3">
       <Button 
         variant="ghost" 
         onClick={() => setIsAddDialogOpen(false)}
@@ -959,7 +959,7 @@ const counts = useMemo(() => {
 </Dialog>
       {/* EDIT DIALOG - RESTORED FULL FIELDS */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
+        <DialogContent className="w-[calc(100vw-2rem)] sm:w-full">
           <DialogHeader>
             <DialogTitle>Edit Policy</DialogTitle>
           </DialogHeader>
@@ -985,7 +985,7 @@ const counts = useMemo(() => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>Start Date</Label>
                   <Input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
@@ -1001,7 +1001,7 @@ const counts = useMemo(() => {
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="flex flex-col-reverse sm:flex-row gap-3">
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleEdit}>Update</Button>
           </DialogFooter>
@@ -1029,7 +1029,7 @@ const counts = useMemo(() => {
       </AlertDialogDescription>
     </AlertDialogHeader>
 
-    <AlertDialogFooter className="mt-6 flex gap-2 sm:justify-center">
+      <AlertDialogFooter className="mt-6 flex flex-col-reverse sm:flex-row gap-2 sm:justify-center">
       <AlertDialogCancel className="flex-1 border-slate-200 text-slate-600 hover:bg-slate-50">
         No, Keep it
       </AlertDialogCancel>
@@ -1044,7 +1044,7 @@ const counts = useMemo(() => {
 </AlertDialog>
       {/* BROADCAST DIALOG */}
       <Dialog open={isMessageDialogOpen} onOpenChange={setIsMessageDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Broadcast SMS</DialogTitle>
           </DialogHeader>
@@ -1059,7 +1059,7 @@ const counts = useMemo(() => {
               onChange={(e) => setBulkMessage(e.target.value)}
             />
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex flex-col-reverse sm:flex-row gap-3">
             <Button variant="ghost" onClick={() => setIsMessageDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSendMessage} disabled={isSending || !bulkMessage.trim()}>
               {isSending ? "Sending..." : "Send"}

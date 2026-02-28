@@ -1,4 +1,4 @@
-if (process.env.NODE_ENV !== "production") {
+ if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
 }
 const express = require("express");
@@ -61,10 +61,10 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // ======================== DATABASE ========================
 console.log("ENV:", process.env.NODE_ENV);
 console.log("MYSQLHOST exists:", !!process.env.MYSQLHOST);
-const isProduction = process.env.NODE_ENV === "production";
+const isProduction = process.env.NODE_ENV === "production"; // Force local mode for development/testing
 const db = mysql.createPool({
   host: isProduction ? process.env.MYSQLHOST : process.env.DB_HOST,
-  user: isProduction ? process.env.MYSQLUSER : process.env.DB_USER,
+  user:  isProduction ? process.env.MYSQLUSER : process.env.DB_USER,
   password: isProduction ? process.env.MYSQLPASSWORD : process.env.DB_PASS,
   database: isProduction ? process.env.MYSQLDATABASE : process.env.DB_NAME,
   port: isProduction ? process.env.MYSQLPORT : process.env.DB_PORT || 3306,

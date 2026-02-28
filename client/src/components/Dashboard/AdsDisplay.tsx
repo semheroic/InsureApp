@@ -1,5 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { Badge } from "@/components/ui/badge";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import axios from "axios";
 import { Loader2, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
@@ -46,7 +45,6 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
 
   useEffect(() => { fetchAds(); }, []);
 
-  // --- Navigation Logic ---
   const nextAd = useCallback(() => {
     setCurrentIndex((prev) => (prev + 1) % ads.length);
   }, [ads.length]);
@@ -55,7 +53,6 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
     setCurrentIndex((prev) => (prev - 1 + ads.length) % ads.length);
   }, [ads.length]);
 
-  // --- Auto-scroll Logic (Scrolls every 5 seconds) ---
   useEffect(() => {
     if (ads.length <= 1) return;
     const interval = setInterval(nextAd, 5000);
@@ -69,8 +66,8 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="animate-spin w-10 h-10 text-indigo-600" />
+      <div className="flex items-center justify-center py-12 md:py-16">
+        <Loader2 className="animate-spin w-8 h-8 md:w-10 md:h-10 text-indigo-600" />
       </div>
     );
   }
@@ -78,24 +75,22 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
   if (!ads.length) return null;
 
   return (
-    <div className="relative w-full max-w-4xl mx-auto group">
-      {/* Navigation Buttons */}
-      <div className="absolute -left-4 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+    <div className="relative w-full max-w-5xl mx-auto px-4 group">
+      {/* Navigation Buttons - Hidden on Mobile, Visible on Desktop Hover */}
+      <div className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity ml-6">
         <Button 
-          variant="outline" 
-          size="icon" 
-          className="rounded-full shadow-xl bg-white/90 backdrop-blur dark:bg-slate-800/90 border-none h-10 w-10"
+          variant="outline" size="icon" 
+          className="rounded-full shadow-xl bg-white/90 dark:bg-slate-800/90 border-none h-10 w-10 hover:scale-110 transition-transform"
           onClick={prevAd}
         >
           <ChevronLeft className="w-6 h-6 text-indigo-600" />
         </Button>
       </div>
 
-      <div className="absolute -right-4 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="hidden md:block absolute right-0 top-1/2 -translate-y-1/2 z-20 opacity-0 group-hover:opacity-100 transition-opacity mr-6">
         <Button 
-          variant="outline" 
-          size="icon" 
-          className="rounded-full shadow-xl bg-white/90 backdrop-blur dark:bg-slate-800/90 border-none h-10 w-10"
+          variant="outline" size="icon" 
+          className="rounded-full shadow-xl bg-white/90 dark:bg-slate-800/90 border-none h-10 w-10 hover:scale-110 transition-transform"
           onClick={nextAd}
         >
           <ChevronRight className="w-6 h-6 text-indigo-600" />
@@ -103,15 +98,16 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
       </div>
 
       {/* Main Container */}
-      <div className="overflow-hidden rounded-[32px] shadow-2xl border border-slate-100 dark:border-slate-800">
+      <div className="overflow-hidden rounded-2xl md:rounded-[32px] shadow-2xl border border-slate-100 dark:border-slate-800">
         <div 
-          className="flex transition-transform duration-700 ease-in-out" 
+          className="flex transition-transform duration-700 ease-[cubic-bezier(0.4,0,0.2,1)]" 
           style={{ transform: `translateX(-${currentIndex * 100}%)` }}
         >
           {ads.map((ad) => (
             <div key={ad.id} className="w-full flex-shrink-0">
               <Card className="border-none bg-white dark:bg-slate-900 rounded-none overflow-hidden">
-                <div className="relative w-full aspect-[21/9] bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                {/* Responsive Aspect Ratio: 16:9 for Mobile, 21:9 for Desktop */}
+                <div className="relative w-full aspect-[16/9] md:aspect-[21/9] bg-slate-100 dark:bg-slate-800 overflow-hidden">
                   {ad.ad_type === "video" ? (
                     <video
                       src={getMediaSrc(ad.media_url)}
@@ -126,22 +122,27 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
                     />
                   )}
 
-                  <div className="absolute top-6 left-6 flex items-center gap-3">
-                    <div className="px-4 py-1.5 bg-white/20 backdrop-blur-md rounded-full border border-white/30 text-white text-[10px] font-black uppercase tracking-widest">
+                  {/* Sponsored Badge - Scaled for Mobile */}
+                  <div className="absolute top-3 left-3 md:top-6 md:left-6 flex items-center gap-3">
+                    <div className="px-3 py-1 md:px-4 md:py-1.5 bg-black/30 backdrop-blur-md rounded-full border border-white/20 text-white text-[8px] md:text-[10px] font-black uppercase tracking-[0.15em]">
                       Sponsored by {ad.company_name}
                     </div>
                   </div>
 
-                  <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-slate-900/90 to-transparent text-white">
-                    <h3 className="text-2xl font-black mb-2 leading-tight">{ad.title || "Special Offer"}</h3>
+                  {/* Gradient & Text Overlay */}
+                  <div className="absolute bottom-0 left-0 right-0 p-4 md:p-8 bg-gradient-to-t from-slate-900/95 via-slate-900/40 to-transparent text-white">
+                    <h3 className="text-lg md:text-2xl font-black mb-1 md:mb-2 leading-tight">
+                      {ad.title || "Special Offer"}
+                    </h3>
                     {ad.target_url && (
                       <a
                         href={ad.target_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 text-sm font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+                        className="inline-flex items-center gap-1.5 text-xs md:text-sm font-bold text-indigo-400 hover:text-indigo-300 transition-colors group/link"
                       >
-                        Learn More <ExternalLink size={14} />
+                        Explore Now 
+                        <ExternalLink size={12} className="md:w-[14px] md:h-[14px] group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5 transition-transform" />
                       </a>
                     )}
                   </div>
@@ -152,15 +153,18 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
         </div>
       </div>
 
-      {/* Pagination Dots */}
-      <div className="flex justify-center gap-2 mt-6">
+      {/* Pagination Dots - Larger hit area for touch */}
+      <div className="flex justify-center items-center gap-2.5 mt-4 md:mt-6">
         {ads.map((_, i) => (
           <button
             key={i}
             onClick={() => setCurrentIndex(i)}
+            aria-label={`Go to ad ${i + 1}`}
             className={cn(
-              "h-1.5 transition-all duration-300 rounded-full",
-              currentIndex === i ? "w-8 bg-indigo-600" : "w-2 bg-slate-300 dark:bg-slate-700"
+              "h-1.5 md:h-2 transition-all duration-300 rounded-full p-0",
+              currentIndex === i 
+                ? "w-6 md:w-8 bg-indigo-600" 
+                : "w-1.5 md:w-2 bg-slate-300 dark:bg-slate-700 hover:bg-slate-400"
             )}
           />
         ))}

@@ -51,7 +51,7 @@ export const PageHeader = ({ companyFilter, onFilterChange, onExport }: PageHead
         </div>
         
         <Select value={companyFilter} onValueChange={onFilterChange}>
-          <SelectTrigger className="w-[160px] bg-white border-slate-200 shadow-sm hover:border-blue-400 transition-colors h-9 text-xs font-semibold">
+          <SelectTrigger className="w-full sm:w-[160px] bg-white border-slate-200 shadow-sm hover:border-blue-400 transition-colors h-9 text-xs font-semibold">
             <SelectValue placeholder="All Companies" />
           </SelectTrigger>
           <SelectContent className="rounded-xl border-slate-200">
@@ -65,7 +65,18 @@ export const PageHeader = ({ companyFilter, onFilterChange, onExport }: PageHead
 
         <div className="w-[1px] h-6 bg-slate-200 mx-1 hidden sm:block" />
 
-        
+        {/* export button placed after filter; spans full width on mobile */}
+        <div className="flex-shrink-0 w-full sm:w-auto">
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex items-center gap-2 h-9 w-full sm:w-auto text-xs font-semibold"
+            onClick={handleExportClick}
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -28,6 +28,7 @@ interface PolicyFollowUp {
   company: string;
   expiryDate: string;
   followup_status: "confirmed" | "pending" | "missed";
+  followed_at: string; // From MariaDB: "2026-02-28 01:08:03"
 }
 
 const API_FOLLOWUP = `${import.meta.env.VITE_API_URL}/api/followup`;
@@ -38,6 +39,9 @@ export default function FollowUps() {
   const [data, setData] = useState<PolicyFollowUp[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  
+  /** New state for Time Filtering */
+  const [timeRange, setTimeRange] = useState<"all" | "today" | "week" | "month">("all");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -55,11 +59,38 @@ export default function FollowUps() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  /** Date Filtering Logic using followed_at */
+  const checkDateInRange = (dateStr: string, range: string) => {
+    if (range === "all") return true;
+    if (!dateStr) return false;
+
+    const recordDate = new Date(dateStr);
+    const now = new Date();
+    
+    // Compare dates without time for "Today"
+    const isSameDay = recordDate.toDateString() === now.toDateString();
+    if (range === "today") return isSameDay;
+
+    // Calculate day difference for Week/Month
+    const diffTime = Math.abs(now.getTime() - recordDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (range === "week") return diffDays <= 7;
+    if (range === "month") return diffDays <= 30;
+
+    return true;
+  };
+
   const { grouped } = useMemo(() => {
-    const currentFiltered = data.filter(p => 
-      p.plate.toLowerCase().includes(search.toLowerCase()) || 
-      p.owner.toLowerCase().includes(search.toLowerCase())
-    );
+    const currentFiltered = data.filter(p => {
+      const matchesSearch = p.plate.toLowerCase().includes(search.toLowerCase()) || 
+                           p.owner.toLowerCase().includes(search.toLowerCase());
+      
+      const matchesTime = checkDateInRange(p.followed_at, timeRange);
+      
+      return matchesSearch && matchesTime;
+    });
+
     return {
       grouped: {
         confirmed: currentFiltered.filter(p => p.followup_status === "confirmed"),
@@ -67,7 +98,7 @@ export default function FollowUps() {
         missed: currentFiltered.filter(p => p.followup_status === "missed"),
       }
     };
-  }, [data, search]);
+  }, [data, search, timeRange]);
 
   return (
     <motion.div 
@@ -110,17 +141,37 @@ export default function FollowUps() {
       {/* MAIN CONTENT */}
       <motion.div variants={itemVars}>
         <Card className="overflow-hidden border-none shadow-xl shadow-slate-200/50 dark:shadow-none ring-1 ring-slate-200 dark:ring-slate-800">
-          <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-col md:flex-row justify-between gap-4">
-             <div className="relative w-full md:w-80">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search owner or plate..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border-none ring-1 ring-slate-200 dark:ring-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                />
-             </div>
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-col lg:flex-row justify-between gap-4 items-center">
+              
+              {/* Search Bar */}
+              <div className="relative w-full md:w-80">
+                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                 <input
+                   type="text"
+                   placeholder="Search owner or plate..."
+                   value={search}
+                   onChange={(e) => setSearch(e.target.value)}
+                   className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border-none ring-1 ring-slate-200 dark:ring-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                 />
+              </div>
+
+              {/* Time Range Filter Group */}
+              <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl ring-1 ring-slate-200 dark:ring-slate-800 self-stretch md:self-auto">
+                {(["all", "today", "week", "month"] as const).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setTimeRange(r)}
+                    className={cn(
+                      "flex-1 md:flex-none px-4 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all",
+                      timeRange === r 
+                        ? "bg-white dark:bg-slate-700 text-blue-600 shadow-sm" 
+                        : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                    )}
+                  >
+                    {r === "all" ? "All Time" : r}
+                  </button>
+                ))}
+              </div>
           </div>
 
           <Tabs defaultValue="pending" className="w-full">
@@ -132,7 +183,7 @@ export default function FollowUps() {
 
             <AnimatePresence mode="wait">
               <motion.div
-                key="tab-content"
+                key={`${timeRange}-content`}
                 initial={{ opacity: 0, x: 10 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -10 }}
@@ -190,6 +241,7 @@ function StatusCard({ title, count, icon: Icon, color }: { title: string, count:
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{title}</p>
           <motion.div 
+            key={count} // Triggers animation when count changes via filter
             initial={{ scale: 0.5 }} 
             animate={{ scale: 1 }} 
             className="text-4xl font-black mt-1 text-slate-900 dark:text-white"

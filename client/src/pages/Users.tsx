@@ -229,7 +229,7 @@ const Users = () => {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Users</h1>
           <p className="text-muted-foreground text-sm flex items-center gap-2">
@@ -237,7 +237,7 @@ const Users = () => {
             {isAdmin && <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">{users.length} Total</span>}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {isAdmin && (
             <>
               <Button variant="outline" className="gap-2" onClick={() => {
@@ -284,16 +284,16 @@ const Users = () => {
         </div>
 
         {/* Table */}
-        <div className="rounded-xl border border-border overflow-hidden">
-          <Table>
+        <div className="rounded-xl border border-border overflow-x-auto">
+          <Table className="min-w-full md:min-w-[800px]">
             <TableHeader className="bg-muted/50">
               <TableRow>
-                <TableHead>User Profile</TableHead>
-                <TableHead>Contact Info</TableHead>
-                <TableHead>Permissions</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Member Since</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="whitespace-nowrap">User Profile</TableHead>
+                <TableHead className="whitespace-nowrap">Contact Info</TableHead>
+                <TableHead className="whitespace-nowrap">Permissions</TableHead>
+                <TableHead className="whitespace-nowrap">Status</TableHead>
+                <TableHead className="whitespace-nowrap">Member Since</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -301,7 +301,7 @@ const Users = () => {
                 const isMe = user.id === currentUser?.id;
                 return (
                   <TableRow key={user.id} className={cn(isMe && "bg-primary/[0.02]")}>
-                    <TableCell>
+                    <TableCell className="whitespace-normal">
                       <div className="flex items-center gap-3">
                         <div className="relative">
                           <Avatar className="w-10 h-10 border shadow-sm">
@@ -322,16 +322,15 @@ const Users = () => {
                           <span className="text-xs text-muted-foreground truncate max-w-[150px]">{user.email}</span>
                         </div>
                       </div>
-                    </TableCell>
-                    <TableCell>
+                    </TableCell>                    <TableCell className="whitespace-nowrap">
                       <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
                         <div className="flex items-center gap-1.5"><Mail className="w-3 h-3" /> {user.email}</div>
                         <div className="flex items-center gap-1.5"><Phone className="w-3 h-3" /> {user.phone}</div>
                       </div>
                     </TableCell>
-                    <TableCell><Badge variant="outline" className={cn("text-[10px] font-bold px-2", getRoleBadge(user.role))}>{user.role}</Badge></TableCell>
-                    <TableCell><Badge variant="outline" className={cn("text-[10px] font-bold px-2", getStatusBadge(user.status))}>{user.status}</Badge></TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{user.joinDate}</TableCell>
+                    <TableCell className="whitespace-nowrap"><Badge variant="outline" className={cn("text-[10px] font-bold px-2", getRoleBadge(user.role))}>{user.role}</Badge></TableCell>
+                    <TableCell className="whitespace-nowrap"><Badge variant="outline" className={cn("text-[10px] font-bold px-2", getStatusBadge(user.status))}>{user.status}</Badge></TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{user.joinDate}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
                         <Button variant="ghost" size="icon" onClick={() => { setSelectedUser(user); setIsViewDialogOpen(true); }}><Eye className="w-4 h-4" /></Button>

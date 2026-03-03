@@ -13,6 +13,7 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuItem, // Added for accessibility
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,9 @@ const SESSION_DURATION_HOURS = 8;
 export const Header = () => {
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  
+  // Audio Ref for notification sound
+  const notificationSound = useRef<HTMLAudioElement | null>(null);
 
   // --- STATES ---
   const [user, setUser] = useState({ id: 0, name: "", email: "", profile_picture: "", role: "" });
@@ -52,21 +56,41 @@ export const Header = () => {
     return commands.filter(c => c.title.toLowerCase().includes(term));
   }, [search]);
 
-  // --- DATA FETCHING ---
+  // --- DATA FETCHING & SOUND ---
   const fetchNotifications = async () => {
     try {
       const res = await fetch(`${API_URL}/sms/logs`, { credentials: "include" });
       const data = await res.json();
-      setNotifications(data.logs || []);
-      setUnreadCount(data.unread || 0);
-    } catch (err) { console.error(err); }
+      
+      const newLogs = data.logs || [];
+      const newUnread = data.unread || 0;
+
+      // Check if unread count increased to play sound
+      if (newUnread > unreadCount && unreadCount !== 0) {
+        playNotificationSound();
+      }
+
+      setNotifications(newLogs);
+      setUnreadCount(newUnread);
+    } catch (err) { console.error("Fetch Error:", err); }
+  };
+
+  const playNotificationSound = () => {
+    try {
+      if (!notificationSound.current) {
+        // You can replace this URL with your preferred notification sound
+        notificationSound.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3");
+      }
+      notificationSound.current.play().catch(e => console.log("Sound blocked by browser auto-play policy"));
+    } catch (err) { console.error("Sound Error:", err); }
   };
 
   const markAsRead = async (id: number) => {
     try {
+      // Logic for specific read route: /sms/logs/:id/read
       await fetch(`${API_URL}/sms/logs/${id}/read`, { method: "PUT", credentials: "include" });
-      fetchNotifications();
-    } catch (err) { console.error(err); }
+      fetchNotifications(); // Refresh list
+    } catch (err) { console.error("Mark Read Error:", err); }
   };
 
   const markAllRead = async () => {
@@ -85,7 +109,7 @@ export const Header = () => {
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 20000);
     return () => clearInterval(interval);
-  }, [navigate]);
+  }, [navigate, unreadCount]); // Dependency ensures sound logic has context
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -123,7 +147,6 @@ export const Header = () => {
     <header className="fixed top-0 right-0 left-0 lg:left-[280px] h-16 border-b border-muted/30 bg-background/60 backdrop-blur-md z-50 transition-all duration-300">
       <div className="h-full px-4 md:px-8 flex justify-between items-center gap-4">
         
-        {/* MOBILE MENU TOGGLE (Optional but recommended for layout flow) */}
         <div className="lg:hidden">
             <ShieldCheck className="w-8 h-8 text-primary" />
         </div>
@@ -160,7 +183,6 @@ export const Header = () => {
             )}
           </div>
           
-          {/* THEME TOGGLE - Hidden on very small screens to save space, or kept if preferred */}
           <Button variant="ghost" size="icon" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} className="rounded-xl md:rounded-2xl shrink-0 hover:bg-muted/50 h-10 w-10 md:h-11 md:w-11">
             {theme === "light" ? <Moon className="w-4 h-4 md:w-5 md:h-5 text-slate-700" /> : <Sun className="w-4 h-4 md:w-5 md:h-5 text-yellow-500" />}
           </Button>
@@ -176,7 +198,6 @@ export const Header = () => {
               </Button>
             </DropdownMenuTrigger>
             
-            {/* Mobile adjusted width: max-w-[calc(100vw-32px)] */}
             <DropdownMenuContent align="end" className="w-[300px] md:w-[420px] p-0 rounded-[24px] border-muted/30 bg-background/95 backdrop-blur-2xl shadow-2xl mt-4 overflow-hidden animate-in zoom-in-95">
               {selectedLog ? (
                 <div className="flex flex-col h-full">
@@ -192,9 +213,12 @@ export const Header = () => {
                   <div className="p-4 md:p-6 space-y-4">
                     <div className="bg-primary/[0.03] border border-primary/10 p-4 md:p-6 rounded-[15px] md:rounded-[20px] rounded-tl-none">
                       <p className="text-sm md:text-[15px] leading-relaxed whitespace-pre-wrap">{selectedLog.message}</p>
-                      <span className="text-[9px] md:text-[10px] text-muted-foreground block mt-4 text-right">
-                        {new Date(selectedLog.created_at).toLocaleString()}
-                      </span>
+                      <div className="flex justify-between items-end mt-4">
+                        <span className="text-[8px] font-mono text-muted-foreground">Cost: ${selectedLog.cost || '0.00'}</span>
+                        <span className="text-[9px] md:text-[10px] text-muted-foreground block text-right">
+                          {new Date(selectedLog.created_at).toLocaleString()}
+                        </span>
+                      </div>
                     </div>
                     <Button className="w-full rounded-xl py-6 text-xs md:text-sm font-bold" onClick={() => setSelectedLog(null)}>
                       Back to Inbox
@@ -206,11 +230,11 @@ export const Header = () => {
                   <div className="p-4 md:p-6 border-b bg-muted/10">
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="font-bold text-base md:text-lg">Inbox</h3>
-                      <Button variant="ghost" onClick={markAllRead} className="h-7 text-[9px] md:text-[11px] font-bold text-primary uppercase">Mark all read</Button>
+                      <button onClick={(e) => { e.preventDefault(); markAllRead(); }} className="h-7 text-[9px] md:text-[11px] font-bold text-primary uppercase hover:opacity-70">Mark all read</button>
                     </div>
                     <div className="flex gap-1 p-1 bg-muted/40 rounded-xl border border-muted/10">
-                      <button onClick={() => setActiveTab("all")} className={cn("flex-1 text-[10px] font-bold py-1.5 rounded-lg transition-all", activeTab === "all" ? "bg-background text-primary shadow-sm" : "text-muted-foreground")}>ALL</button>
-                      <button onClick={() => setActiveTab("unread")} className={cn("flex-1 text-[10px] font-bold py-1.5 rounded-lg transition-all", activeTab === "unread" ? "bg-background text-primary shadow-sm" : "text-muted-foreground")}>UNREAD</button>
+                      <button onClick={(e) => { e.preventDefault(); setActiveTab("all"); }} className={cn("flex-1 text-[10px] font-bold py-1.5 rounded-lg transition-all", activeTab === "all" ? "bg-background text-primary shadow-sm" : "text-muted-foreground")}>ALL</button>
+                      <button onClick={(e) => { e.preventDefault(); setActiveTab("unread"); }} className={cn("flex-1 text-[10px] font-bold py-1.5 rounded-lg transition-all", activeTab === "unread" ? "bg-background text-primary shadow-sm" : "text-muted-foreground")}>UNREAD</button>
                     </div>
                   </div>
                   <div className="max-h-[300px] md:max-h-[360px] overflow-y-auto px-1">
@@ -221,17 +245,24 @@ export const Header = () => {
                       </div>
                     ) : (
                       filteredNotifications.map((n: any) => (
-                        <div key={n.id} className={cn("m-1 p-3 flex items-center justify-between rounded-xl transition-all", !n.is_read ? "bg-primary/[0.04]" : "hover:bg-muted/30")}>
+                        <div 
+                          key={n.id} 
+                          className={cn("m-1 p-3 flex items-center justify-between rounded-xl transition-all cursor-pointer", !n.is_read ? "bg-primary/[0.04]" : "hover:bg-muted/30")}
+                          onClick={() => { setSelectedLog(n); markAsRead(n.id); }}
+                        >
                           <div className="flex items-center gap-3">
                             <div className={cn("w-2 h-2 rounded-full", !n.is_read ? "bg-primary" : "bg-muted")} />
                             <div className="max-w-[120px] md:max-w-none">
                               <p className={cn("text-xs font-bold truncate", !n.is_read ? "text-foreground" : "text-muted-foreground")}>{n.phone_number}</p>
-                              <p className="text-[9px] text-muted-foreground">{new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                              <p className="text-[9px] text-muted-foreground truncate max-w-[150px]">{n.message}</p>
                             </div>
                           </div>
-                          <Button variant="ghost" size="sm" onClick={() => { setSelectedLog(n); markAsRead(n.id); }} className="h-8 w-8 rounded-lg hover:bg-primary hover:text-white">
-                            <Eye className="w-3.5 h-3.5" />
-                          </Button>
+                          <div className="flex items-center gap-2">
+                             <p className="text-[9px] text-muted-foreground">{new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                             <Button variant="ghost" size="sm" className="h-8 w-8 rounded-lg hover:bg-primary hover:text-white">
+                                <Eye className="w-3.5 h-3.5" />
+                             </Button>
+                          </div>
                         </div>
                       ))
                     )}
@@ -256,7 +287,6 @@ export const Header = () => {
                   </Avatar>
                   <span className="absolute bottom-0 right-0 h-2.5 w-2.5 md:h-3.5 md:w-3.5 rounded-full bg-green-500 border-2 md:border-[3px] border-background z-20" />
                 </div>
-                {/* Responsive text hiding: hidden on mobile, block on large screens */}
                 <div className="text-left hidden sm:block">
                   <div className="flex items-center gap-2 mb-0.5">
                     <p className="text-[11px] md:text-[13px] font-bold truncate max-w-[80px] md:max-w-none">{user.name.split(' ')[0]}</p>

@@ -767,31 +767,52 @@ app.get("/api/expiry-report", async (req, res) => {
   const filter = company !== "all" ? "AND p.company=?" : "";
   const params = company !== "all" ? [company] : [];
 
-  // SQL Helper to avoid repeating the JOIN logic
   const baseSelect = `
     SELECT 
       p.id, p.plate, p.owner, p.company, p.contact,
+      DATE_FORMAT(p.start_date, '%Y-%m-%d') AS startDate,
       DATE_FORMAT(p.expiry_date, '%Y-%m-%d') AS expiryDate,
       f.followup_status 
     FROM policies p
     LEFT JOIN followups f ON p.id = f.policy_id
   `;
 
+  // 1. Today's Expiries
   const today = await query(`${baseSelect} WHERE p.expiry_date = CURDATE() ${filter} ORDER BY p.expiry_date ASC`, params);
+
+  // 2. This Week (Next 1 to 7 days)
   const week = await query(`${baseSelect} WHERE p.expiry_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 1 DAY) AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) ${filter} ORDER BY p.expiry_date ASC`, params);
+
+  // 3. This Month (From day 8 until the end of the current calendar month)
   const month = await query(`${baseSelect} WHERE p.expiry_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 8 DAY) AND LAST_DAY(CURDATE()) ${filter} ORDER BY p.expiry_date ASC`, params);
+
+  // --- NEW: Next Month (Entirety of the following calendar month) ---
+  const nextMonth = await query(`
+    ${baseSelect} 
+    WHERE p.expiry_date BETWEEN DATE_ADD(LAST_DAY(CURDATE()), INTERVAL 1 DAY) 
+    AND LAST_DAY(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)) 
+    ${filter} 
+    ORDER BY p.expiry_date ASC`, params);
+
+  // 4. 30-Day Outlook
+  const thirtyDays = await query(`${baseSelect} WHERE p.expiry_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 1 DAY) AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) ${filter} ORDER BY p.expiry_date ASC`, params);
+
+  // 365_Day Outlook 
+  const yearly = await query(`
+    ${baseSelect} 
+    WHERE p.expiry_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 1 DAY) 
+    AND DATE_ADD(CURDATE(), INTERVAL 1 YEAR) 
+    ${filter} 
+    ORDER BY p.expiry_date ASC`, params);
+
+  // 5. Expired
   const expired = await query(`
-    SELECT 
-      p.id, p.plate, p.owner, p.company, p.contact,
-      DATE_FORMAT(p.expiry_date, '%Y-%m-%d') AS expiryDate,
-      DATEDIFF(CURDATE(), p.expiry_date) AS days_overdue,
-      f.followup_status
-    FROM policies p
-    LEFT JOIN followups f ON p.id = f.policy_id
+    ${baseSelect.replace('f.followup_status', 'DATEDIFF(CURDATE(), p.expiry_date) AS days_overdue, f.followup_status')}
     WHERE p.expiry_date < CURDATE() ${filter} 
     ORDER BY p.expiry_date DESC`, params);
 
-  res.json({ today, week, month, expired });
+  // Send the combined response including nextMonth
+  res.json({ today, week, month, nextMonth, thirtyDays, yearly, expired });
 });
 // ======================== SMS LOGS ========================
 app.get("/sms/logs", isAuthenticated, async (req,res)=>{ // Added 'cost' to the SELECT statement
@@ -799,7 +820,11 @@ const logs = await query("SELECT id, phone_number, message, cost, delivery_statu
 app.put("/sms/mark-read", isAuthenticated, async (req,res)=>{ await query("UPDATE sms_logs SET is_read = 1 WHERE is_read = 0"); res.json({ message:"Notifications marked as read" }); });
 app.put("/sms/mark-unread/:id", isAuthenticated, async (req,res)=>{ await query("UPDATE sms_logs SET is_read=0 WHERE id=?",[req.params.id]); res.json({ message:"Marked as unread" }); });
 app.delete("/sms/delete/:id", isAuthenticated, async (req,res)=>{ await query("DELETE FROM sms_logs WHERE id=?",[req.params.id]); res.json({ message:"Deleted" }); });
-
+// Add this to your backend
+app.put("/sms/logs/:id/read", isAuthenticated, async (req,res)=>{ 
+  await query("UPDATE sms_logs SET is_read = 1 WHERE id = ?", [req.params.id]); 
+  res.json({ message: "Marked as read" }); 
+});
 cron.schedule("0 0 * * *", async () => {
   // ---------------- Expired policies ----------------
   const expired = await query(`

@@ -2,7 +2,8 @@ import { useEffect, useState, useMemo } from "react";
 import { 
   CheckCircle2, XCircle, Search, User, Hash, ArrowRight, History as HistoryIcon, 
   RefreshCcw, MessageSquare, DollarSign, Send, ShieldCheck, 
-  Phone, Building2, Filter, TrendingUp, Clock, Zap, Sparkles, CalendarDays, AlertCircle, Download
+  Phone, Building2, Filter, TrendingUp, Clock, Zap, Sparkles, CalendarDays, AlertCircle, Download,
+  ExternalLink, FileText, Calendar, Car
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card } from "@/components/ui/card";
@@ -12,6 +13,14 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+// Added Dialog for the Modal
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 // --- Variants ---
 const containerVariants = {
@@ -61,9 +70,12 @@ const PolicyHistory = () => {
   const [activeTab, setActiveTab] = useState<"policies" | "messages">("policies");
   const [statusFilter, setStatusFilter] = useState<"all" | "expired" | "renewed">("all");
   const [companyFilter, setCompanyFilter] = useState("all");
+  
+  // Modal State
+  const [selectedPolicy, setSelectedPolicy] = useState<PolicyHistoryData | null>(null);
+  
   const { toast } = useToast();
-
- const API_URL = import.meta.env.VITE_API_URL;
+  const API_URL = import.meta.env.VITE_API_URL;
 
   const fetchData = async () => {
     setLoading(true);
@@ -175,7 +187,7 @@ const PolicyHistory = () => {
   };
 
   return (
-    <motion.div initial="hidden" animate="visible" variants={containerVariants} className="max-w-6xl mx-auto p-6 space-y-8">
+    <motion.div initial="hidden" animate="visible" variants={containerVariants} className="max-w-6xl mx-auto px-4 p-6 space-y-8">
       
       {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
@@ -197,7 +209,7 @@ const PolicyHistory = () => {
       </div>
 
       {/* ANALYTICS CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-5 bg-emerald-500/5 border-emerald-500/20 border-l-4 border-l-emerald-500">
           <p className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Total Renewed</p>
           <div className="flex items-center justify-between mt-2">
@@ -298,7 +310,11 @@ const PolicyHistory = () => {
         <div className="absolute left-[15px] top-6 bottom-6 w-1 bg-gradient-to-b from-primary via-muted to-transparent rounded-full opacity-50" />
         <AnimatePresence mode="popLayout">
           {filteredData.map((item: any) => (
-            <motion.div key={`${activeTab}-${item.id}`} variants={itemVariants} className="relative ml-10 mb-6 last:mb-0">
+            <motion.div 
+              key={`${activeTab}-${item.id}`} 
+              variants={itemVariants} 
+              className="relative ml-10 mb-6 last:mb-0"
+            >
               <div className={cn(
                 "absolute -left-[45px] top-4 w-8 h-8 rounded-full border-4 border-background shadow-md flex items-center justify-center text-white",
                 activeTab === 'policies' ? (item.renewed_date ? "bg-emerald-500" : "bg-rose-500") : "bg-blue-600"
@@ -306,7 +322,13 @@ const PolicyHistory = () => {
                 {activeTab === 'policies' ? <Hash size={14}/> : <Send size={14}/>}
               </div>
 
-              <Card className="p-6 hover:shadow-xl transition-all group border-muted">
+              <Card 
+                onClick={() => activeTab === 'policies' && setSelectedPolicy(item)}
+                className={cn(
+                  "p-6 transition-all group border-muted",
+                  activeTab === 'policies' && "cursor-pointer hover:shadow-xl hover:border-primary/30"
+                )}
+              >
                 <div className="flex flex-col md:flex-row justify-between gap-6">
                   <div className="flex-grow">
                     <div className="flex items-center gap-2 mb-2">
@@ -357,6 +379,87 @@ const PolicyHistory = () => {
           ))}
         </AnimatePresence>
       </div>
+
+      {/* POLICY DETAILS MODAL */}
+      <Dialog open={!!selectedPolicy} onOpenChange={() => setSelectedPolicy(null)}>
+        <DialogContent className="w-full sm:max-w-[500px] p-0 overflow-hidden border-none bg-background rounded-3xl shadow-2xl">
+          <div className={cn(
+            "h-32 w-full p-6 flex items-end justify-between",
+            selectedPolicy?.renewed_date ? "bg-emerald-500" : "bg-rose-500"
+          )}>
+            <div className="text-white">
+              <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Policy Detail Record</p>
+              <h2 className="text-3xl font-black italic tracking-tighter uppercase">{selectedPolicy?.plate}</h2>
+            </div>
+            <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md">
+              <FileText className="text-white" size={32} />
+            </div>
+          </div>
+
+          <div className="p-8 space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+               <div className="space-y-1">
+                  <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Insurance Provider</p>
+                  <div className="flex items-center gap-2">
+                    <Building2 size={16} className="text-primary"/>
+                    <span className="font-bold">{selectedPolicy?.company}</span>
+                  </div>
+               </div>
+               <div className="space-y-1 text-right">
+                  <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Registry ID</p>
+                  <div className="flex items-center justify-end gap-2">
+                    <span className="font-mono font-bold">#{selectedPolicy?.policy_id}</span>
+                  </div>
+               </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-muted/50 border border-muted flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-background flex items-center justify-center shadow-inner">
+                <User size={20} className="text-primary" />
+              </div>
+              <div>
+                <p className="text-[9px] font-black text-muted-foreground uppercase">Legal Owner</p>
+                <p className="text-lg font-black tracking-tight">{selectedPolicy?.owner}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-dashed">
+               <div className="space-y-1">
+                  <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Expiration Date</p>
+                  <div className="flex items-center gap-2">
+                    <Calendar size={16} className="text-rose-400"/>
+                    <span className="font-bold text-sm">{formatDate(selectedPolicy?.expiry_date || '')}</span>
+                  </div>
+               </div>
+               <div className="space-y-1 text-right">
+                  <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Renewal Status</p>
+                  <div className="flex items-center justify-end gap-2">
+                    {selectedPolicy?.renewed_date ? (
+                      <>
+                        <CheckCircle2 size={16} className="text-emerald-500"/>
+                        <span className="font-bold text-sm text-emerald-600">{formatDate(selectedPolicy?.renewed_date)}</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle size={16} className="text-rose-500"/>
+                        <span className="font-bold text-sm text-rose-600">Pending</span>
+                      </>
+                    )}
+                  </div>
+               </div>
+            </div>
+
+            <div className="pt-4 flex items-center justify-between">
+               <div className="text-[10px] text-muted-foreground italic flex items-center gap-1">
+                 <Clock size={12}/> System log updated: {formatDate(selectedPolicy?.updated_at || '')}
+               </div>
+               <Button variant="ghost" className="rounded-full text-[10px] font-black uppercase tracking-widest" onClick={() => setSelectedPolicy(null)}>
+                 Close Detail
+               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 };

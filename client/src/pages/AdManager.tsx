@@ -119,7 +119,7 @@ export const AdManager: React.FC = () => {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8 min-h-screen">
+    <div className="px-4 py-8 max-w-7xl mx-auto space-y-8 min-h-screen">
       
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -135,7 +135,7 @@ export const AdManager: React.FC = () => {
             </Button>
           </DialogTrigger>
 
-          <DialogContent className="sm:max-w-[550px] p-0 overflow-hidden border-none shadow-2xl rounded-[32px]">
+          <DialogContent className="w-full sm:max-w-[550px] p-0 overflow-hidden border-none shadow-2xl rounded-[32px]">
             <div className="relative bg-slate-900 p-8 text-white">
               <DialogClose className="absolute right-6 top-6 rounded-full p-2 hover:bg-white/10 transition-colors"><Plus className="rotate-45" size={18} /></DialogClose>
               <div className="flex items-center gap-5">
@@ -150,7 +150,7 @@ export const AdManager: React.FC = () => {
             </div>
 
             <div className="p-8 space-y-5 bg-white dark:bg-slate-950">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Sponsor Name</Label>
                   <Input placeholder="Company Name" value={formData.company_name} onChange={e => setFormData({...formData, company_name: e.target.value})} />
@@ -204,7 +204,7 @@ export const AdManager: React.FC = () => {
                 <Input placeholder="Catchy Title" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-[10px] font-bold uppercase text-slate-500 tracking-widest">CTA Button Text</Label>
                   <Input placeholder="Learn More" value={formData.cta_text} onChange={e => setFormData({...formData, cta_text: e.target.value})} />
@@ -287,10 +287,10 @@ export const AdManager: React.FC = () => {
                   <h3 className="font-bold text-xl text-slate-900 dark:text-white leading-tight">{ad.title || "No Headline"}</h3>
                 </div>
 
-                <div className="flex items-center gap-2 pt-5 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex flex-col sm:flex-row items-center gap-2 pt-5 border-t border-slate-100 dark:border-slate-800">
                   <Button 
                     variant="outline" 
-                    className={cn("flex-1 h-11 rounded-xl gap-2 font-bold text-xs", ad.is_active ? "text-amber-600" : "text-emerald-600")}
+                    className={cn("flex-1 sm:flex-none w-full sm:w-auto h-11 rounded-xl gap-2 font-bold text-xs", ad.is_active ? "text-amber-600" : "text-emerald-600")}
                     onClick={() => toggleStatus(ad)}
                   >
                     <Power size={14} /> {ad.is_active ? "Pause" : "Resume"}
@@ -298,13 +298,13 @@ export const AdManager: React.FC = () => {
                   
                   <Button 
                     variant="outline"
-                    className="h-11 w-11 p-0 rounded-xl hover:bg-red-50 hover:text-red-600 transition-colors"
+                    className="h-11 w-11 p-0 rounded-xl hover:bg-red-50 hover:text-red-600 transition-colors mt-2 sm:mt-0"
                     onClick={() => handleDelete(ad)}
                   >
                     <Trash2 size={16} />
                   </Button>
 
-                  <Button className="h-11 w-11 p-0 rounded-xl bg-slate-900 text-white shadow-lg active:scale-90 transition-transform" asChild>
+                  <Button className="h-11 w-11 p-0 rounded-xl bg-slate-900 text-white shadow-lg active:scale-90 transition-transform mt-2 sm:mt-0" asChild>
                     <a href={ad.target_url} target="_blank" rel="noopener noreferrer">
                       <ExternalLink size={16} />
                     </a>

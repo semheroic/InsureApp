@@ -3,7 +3,7 @@ import {
   Send, CheckCircle, Clock, XCircle, 
   Search, X, RotateCcw, Shield, Download, 
   Phone, Loader2, User, Smartphone, Copy, Check, Languages,
-  ChevronLeft, ChevronRight 
+  ChevronLeft, ChevronRight, Calendar as CalendarIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,6 +75,10 @@ export const PolicyTable = ({
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [selectedPolicy, setSelectedPolicy] = useState<any>(null);
   
+  // Date Range State
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const recordsPerPage = 10;
@@ -86,16 +90,37 @@ export const PolicyTable = ({
   const [copied, setCopied] = useState(false);
 
   const filteredData = useMemo(() => {
+    let results = [...data];
     const term = searchQuery.toLowerCase().trim();
-    const results = !term 
-      ? data 
-      : data.filter((p: any) => 
-          String(p.plate).toLowerCase().includes(term) || 
-          String(p.contact).toLowerCase().includes(term) ||
-          String(p.owner).toLowerCase().includes(term)
-        );
+
+    // 1. Filter by Search Term
+    if (term) {
+      results = results.filter((p: any) => 
+        String(p.plate).toLowerCase().includes(term) || 
+        String(p.contact).toLowerCase().includes(term) ||
+        String(p.owner).toLowerCase().includes(term)
+      );
+    }
+
+    // 2. Filter by Date Range
+    if (startDate || endDate) {
+      results = results.filter((p: any) => {
+        const policyDate = new Date(p.expiry_date || p.expiryDate);
+        policyDate.setHours(0, 0, 0, 0);
+
+        if (startDate && endDate) {
+          return policyDate >= new Date(startDate) && policyDate <= new Date(endDate);
+        } else if (startDate) {
+          return policyDate >= new Date(startDate);
+        } else if (endDate) {
+          return policyDate <= new Date(endDate);
+        }
+        return true;
+      });
+    }
+
     return results;
-  }, [data, searchQuery]);
+  }, [data, searchQuery, startDate, endDate]);
 
   const totalPages = Math.ceil(filteredData.length / recordsPerPage);
   const paginatedData = useMemo(() => {
@@ -109,7 +134,6 @@ export const PolicyTable = ({
     const name = policy.owner || "Client";
     const plate = policy.plate || "";
     
-    // Calculate Days Difference logic based on SQL route needs
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const expiry = new Date(policy.expiry_date || policy.expiryDate);
@@ -121,19 +145,16 @@ export const PolicyTable = ({
     let statusPhrase = { rw: "", en: "" };
 
     if (diffDays < 0) {
-      // EXPIRED
       statusPhrase = {
         rw: `ubwishingizi bwa ${plate} bwarangiye hashize iminsi ${Math.abs(diffDays)}`,
         en: `the insurance for ${plate} expired ${Math.abs(diffDays)} days ago`
       };
     } else if (diffDays === 0) {
-      // TODAY
       statusPhrase = {
         rw: `ubwishingizi bwa ${plate} buri burangire uyu munsi`,
         en: `the insurance for ${plate} is expiring today`
       };
     } else {
-      // EXPIRING SOON (1-3 days or more)
       statusPhrase = {
         rw: `ubwishingizi bwa ${plate} buzashira mu minsi ${diffDays}`,
         en: `the insurance for ${plate} will expire in ${diffDays} days`
@@ -164,14 +185,7 @@ export const PolicyTable = ({
   const handleWhatsAppRedirect = () => {
     if (!messagePolicy) return;
     let digits = messagePolicy.contact.replace(/\D/g, "");
-    let cleanNumber;
-    if (digits.startsWith("250")) {
-      cleanNumber = digits;
-    } else if (digits.startsWith("0")) {
-      cleanNumber = "250" + digits.substring(1);
-    } else {
-      cleanNumber = "250" + digits;
-    }
+    let cleanNumber = digits.startsWith("250") ? digits : (digits.startsWith("0") ? "250" + digits.substring(1) : "250" + digits);
     const encodedMsg = encodeURIComponent(editedMessage);
     const whatsappUrl = `https://wa.me/${cleanNumber}?text=${encodedMsg}`;
     window.open(whatsappUrl, "_blank");
@@ -239,8 +253,16 @@ export const PolicyTable = ({
     document.body.removeChild(link);
   };
 
+  const clearFilters = () => {
+    setStartDate("");
+    setEndDate("");
+    setSearchQuery("");
+    setCurrentPage(1);
+  };
+
   return (
     <div className="space-y-6 font-sans">
+      {/* Contact Dialog */}
       <Dialog open={!!selectedPolicy} onOpenChange={() => setSelectedPolicy(null)}>
         <DialogContent className="sm:max-w-[400px] rounded-[24px] border-slate-200 dark:border-slate-800">
           <DialogHeader>
@@ -275,6 +297,7 @@ export const PolicyTable = ({
         </DialogContent>
       </Dialog>
 
+      {/* Message Dialog */}
       <Dialog open={!!messagePolicy} onOpenChange={() => setMessagePolicy(null)}>
         <DialogContent className="sm:max-w-[500px] rounded-[32px] border-none shadow-2xl p-0 overflow-hidden">
           <div className="bg-slate-900 p-6 text-white">
@@ -358,26 +381,56 @@ export const PolicyTable = ({
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {searchable && (
-          <div className="relative flex items-center flex-1 max-w-md group">
-            <Search className="absolute left-4 h-4 w-4 text-slate-400 group-focus-within:text-slate-900 dark:group-focus-within:text-white transition-colors z-10" />
-            <Input
-              placeholder="Search records..."
-              className="pl-11 h-11 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 rounded-xl text-[14px] font-medium tracking-tight shadow-sm focus-visible:ring-1 focus-visible:ring-slate-400"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-            />
-            {searchQuery && (
-              <button onClick={() => {setSearchQuery(""); setCurrentPage(1);}} className="absolute right-4 p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
-                <X className="h-4 w-4 text-slate-400" />
-              </button>
+      {/* Filters Section */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div className="flex flex-col md:flex-row items-center gap-3 flex-1">
+          {searchable && (
+            <div className="relative flex items-center w-full md:max-w-sm group">
+              <Search className="absolute left-4 h-4 w-4 text-slate-400 group-focus-within:text-slate-900 dark:group-focus-within:text-white transition-colors z-10" />
+              <Input
+                placeholder="Search plate, owner..."
+                className="pl-11 h-11 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 rounded-xl text-[14px] font-medium tracking-tight shadow-sm focus-visible:ring-1 focus-visible:ring-slate-400"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+              />
+            </div>
+          )}
+
+          {/* Date Picker Controls */}
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="relative flex-1 md:w-40 group">
+              <CalendarIcon className="absolute left-3 h-3.5 w-3.5 text-slate-400 z-10 top-1/2 -translate-y-1/2" />
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => {setStartDate(e.target.value); setCurrentPage(1);}}
+                className="pl-9 h-11 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 rounded-xl text-[12px] font-bold uppercase tracking-tighter"
+              />
+            </div>
+            <span className="text-slate-300">/</span>
+            <div className="relative flex-1 md:w-40 group">
+              <CalendarIcon className="absolute left-3 h-3.5 w-3.5 text-slate-400 z-10 top-1/2 -translate-y-1/2" />
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => {setEndDate(e.target.value); setCurrentPage(1);}}
+                className="pl-9 h-11 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 rounded-xl text-[12px] font-bold uppercase tracking-tighter"
+              />
+            </div>
+            {(startDate || endDate || searchQuery) && (
+                <Button 
+                    variant="ghost" 
+                    onClick={clearFilters}
+                    className="h-11 w-11 rounded-xl p-0 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                >
+                    <RotateCcw size={18} />
+                </Button>
             )}
           </div>
-        )}
+        </div>
 
         <Button 
           onClick={exportToCSV}
@@ -389,6 +442,7 @@ export const PolicyTable = ({
         </Button>
       </div>
 
+      {/* Main Table */}
       <div className="rounded-[24px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
@@ -527,6 +581,7 @@ export const PolicyTable = ({
           </TableBody>
         </Table>
 
+        {/* Pagination */}
         {totalPages > 1 && (
           <div className="px-8 py-4 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">

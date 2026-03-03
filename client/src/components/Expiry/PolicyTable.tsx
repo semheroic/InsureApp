@@ -94,12 +94,9 @@ export const PolicyTable = ({
           String(p.contact).toLowerCase().includes(term) ||
           String(p.owner).toLowerCase().includes(term)
         );
-    
-    // Reset to page 1 when searching
     return results;
   }, [data, searchQuery]);
 
-  // Derived Pagination Data
   const totalPages = Math.ceil(filteredData.length / recordsPerPage);
   const paginatedData = useMemo(() => {
     const firstPageIndex = (currentPage - 1) * recordsPerPage;
@@ -111,10 +108,41 @@ export const PolicyTable = ({
     if (!policy) return "";
     const name = policy.owner || "Client";
     const plate = policy.plate || "";
+    
+    // Calculate Days Difference logic based on SQL route needs
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const expiry = new Date(policy.expiry_date || policy.expiryDate);
+    expiry.setHours(0, 0, 0, 0);
+    
+    const diffTime = expiry.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    let statusPhrase = { rw: "", en: "" };
+
+    if (diffDays < 0) {
+      // EXPIRED
+      statusPhrase = {
+        rw: `ubwishingizi bwa ${plate} bwarangiye hashize iminsi ${Math.abs(diffDays)}`,
+        en: `the insurance for ${plate} expired ${Math.abs(diffDays)} days ago`
+      };
+    } else if (diffDays === 0) {
+      // TODAY
+      statusPhrase = {
+        rw: `ubwishingizi bwa ${plate} buri burangire uyu munsi`,
+        en: `the insurance for ${plate} is expiring today`
+      };
+    } else {
+      // EXPIRING SOON (1-3 days or more)
+      statusPhrase = {
+        rw: `ubwishingizi bwa ${plate} buzashira mu minsi ${diffDays}`,
+        en: `the insurance for ${plate} will expire in ${diffDays} days`
+      };
+    }
 
     const messages = {
-      rw: `Muraho neza ${name},\nTwishimiye kubamenyesha ko ubwishingizi bwa ${plate} buri burangire uyu munsi.\nNiba mwifuza gukomeza gukorana natwe, mutwoherereze nimero ikoreshwa mu kwishyura, cyangwa mutubaze aho mukeneye ibisobanuro.\nTurabashimiye cyane.`,
-      en: `Hello ${name},\nWe are pleased to inform you that the insurance for ${plate} is expiring today.\nIf you would like to continue working with us, please send us the phone number to be used for payment, or ask us if you need any clarification.\nThank you very much.`
+      rw: `Muraho neza ${name},\nTwishimiye kubamenyesha ko ${statusPhrase.rw}.\nNiba mwifuza gukomeza gukorana natwe, mutwoherereze nimero ikoreshwa mu kwishyura, cyangwa mutubaze aho mukeneye ibisobanuro.\nTurabashimiye cyane.`,
+      en: `Hello ${name},\nWe are pleased to inform you that ${statusPhrase.en}.\nIf you would like to continue working with us, please send us the phone number to be used for payment, or ask us if you need any clarification.\nThank you very much.`
     };
 
     return messages[language];
@@ -195,7 +223,7 @@ export const PolicyTable = ({
     }
     const headers = ["Plate", "Owner", "Contact", "Company", "Expiry Date", "Status"];
     const rows = filteredData.map((p: any) => [
-      p.plate, p.owner, p.contact, p.company, p.expiryDate, p.followup_status || "Pending"
+      p.plate, p.owner, p.contact, p.company, p.expiry_date || p.expiryDate, p.followup_status || "Pending"
     ]);
     const csvContent = [
       headers.join(","),
@@ -213,7 +241,6 @@ export const PolicyTable = ({
 
   return (
     <div className="space-y-6 font-sans">
-      {/* Contact Info Dialog */}
       <Dialog open={!!selectedPolicy} onOpenChange={() => setSelectedPolicy(null)}>
         <DialogContent className="sm:max-w-[400px] rounded-[24px] border-slate-200 dark:border-slate-800">
           <DialogHeader>
@@ -248,7 +275,6 @@ export const PolicyTable = ({
         </DialogContent>
       </Dialog>
 
-      {/* Message Dialog */}
       <Dialog open={!!messagePolicy} onOpenChange={() => setMessagePolicy(null)}>
         <DialogContent className="sm:max-w-[500px] rounded-[32px] border-none shadow-2xl p-0 overflow-hidden">
           <div className="bg-slate-900 p-6 text-white">
@@ -332,7 +358,6 @@ export const PolicyTable = ({
         </DialogContent>
       </Dialog>
 
-      {/* Header Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         {searchable && (
           <div className="relative flex items-center flex-1 max-w-md group">
@@ -343,7 +368,7 @@ export const PolicyTable = ({
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
-                setCurrentPage(1); // Reset to page 1 on search
+                setCurrentPage(1);
               }}
             />
             {searchQuery && (
@@ -364,7 +389,6 @@ export const PolicyTable = ({
         </Button>
       </div>
 
-      {/* Table */}
       <div className="rounded-[24px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
@@ -419,7 +443,7 @@ export const PolicyTable = ({
 
                     <TableCell className="text-center py-4">
                       <span className="text-[13px] font-medium text-slate-600 dark:text-slate-400">
-                        {policy.expiryDate}
+                        {policy.expiry_date || policy.expiryDate}
                       </span>
                     </TableCell>
 
@@ -503,7 +527,6 @@ export const PolicyTable = ({
           </TableBody>
         </Table>
 
-        {/* Pagination Controls */}
         {totalPages > 1 && (
           <div className="px-8 py-4 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">

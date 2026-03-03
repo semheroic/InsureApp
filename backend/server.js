@@ -61,7 +61,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // ======================== DATABASE ========================
 console.log("ENV:", process.env.NODE_ENV);
 console.log("MYSQLHOST exists:", !!process.env.MYSQLHOST);
-const isProduction = process.env.NODE_ENV === "production"; // Force local mode for development/testing
+const isProduction = false; // Force local mode for development/testing
 const db = mysql.createPool({
   host: isProduction ? process.env.MYSQLHOST : process.env.DB_HOST,
   user:  isProduction ? process.env.MYSQLUSER : process.env.DB_USER,

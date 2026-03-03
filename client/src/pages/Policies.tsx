@@ -1070,5 +1070,4 @@ const counts = useMemo(() => {
     </div>
   );
 };
-
 export default Policies;

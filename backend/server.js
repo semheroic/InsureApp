@@ -61,7 +61,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // ======================== DATABASE ========================
 console.log("ENV:", process.env.NODE_ENV);
 console.log("MYSQLHOST exists:", !!process.env.MYSQLHOST);
-const isProduction = process.env.NODE_ENV === "production"; // Force local mode for development/testing
+const isProduction = false; // Force local mode for development/testing
 const db = mysql.createPool({
   host: isProduction ? process.env.MYSQLHOST : process.env.DB_HOST,
   user:  isProduction ? process.env.MYSQLUSER : process.env.DB_USER,
@@ -763,56 +763,89 @@ app.post("/auth/reset-password", async (req,res)=>{ const { email, password } = 
 
 // ======================== EXPIRY REPORT ========================
 app.get("/api/expiry-report", async (req, res) => {
-  const { company = "all" } = req.query;
-  const filter = company !== "all" ? "AND p.company=?" : "";
-  const params = company !== "all" ? [company] : [];
+  try {
+    const { company = "all" } = req.query;
+    const filter = company !== "all" ? "AND p.company=?" : "";
+    const params = company !== "all" ? [company] : [];
 
-  const baseSelect = `
-    SELECT 
-      p.id, p.plate, p.owner, p.company, p.contact,
-      DATE_FORMAT(p.start_date, '%Y-%m-%d') AS startDate,
-      DATE_FORMAT(p.expiry_date, '%Y-%m-%d') AS expiryDate,
-      f.followup_status 
-    FROM policies p
-    LEFT JOIN followups f ON p.id = f.policy_id
-  `;
+    const baseSelect = `
+      SELECT 
+        p.id, p.plate, p.owner, p.company, p.contact,
+        DATE_FORMAT(p.start_date, '%Y-%m-%d') AS startDate,
+        DATE_FORMAT(p.expiry_date, '%Y-%m-%d') AS expiryDate,
+        f.followup_status
+      FROM policies p
+      LEFT JOIN followups f ON p.id = f.policy_id
+    `;
 
-  // 1. Today's Expiries
-  const today = await query(`${baseSelect} WHERE p.expiry_date = CURDATE() ${filter} ORDER BY p.expiry_date ASC`, params);
+    // Use days_remaining to clearly categorize
+    const selectWithDays = baseSelect.replace(
+      "f.followup_status",
+      "DATEDIFF(p.expiry_date, CURDATE()) AS days_remaining, f.followup_status"
+    );
 
-  // 2. This Week (Next 1 to 7 days)
-  const week = await query(`${baseSelect} WHERE p.expiry_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 1 DAY) AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) ${filter} ORDER BY p.expiry_date ASC`, params);
+    // 1️⃣ Expired (days_remaining < 0)
+    const expired = await query(`
+      ${selectWithDays} 
+      WHERE DATEDIFF(p.expiry_date, CURDATE()) < 0
+      ${filter}
+      ORDER BY p.expiry_date DESC
+    `, params);
 
-  // 3. This Month (From day 8 until the end of the current calendar month)
-  const month = await query(`${baseSelect} WHERE p.expiry_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 8 DAY) AND LAST_DAY(CURDATE()) ${filter} ORDER BY p.expiry_date ASC`, params);
+    // 2️⃣ Today (days_remaining = 0)
+    const today = await query(`
+      ${selectWithDays} 
+      WHERE DATEDIFF(p.expiry_date, CURDATE()) = 0
+      ${filter}
+      ORDER BY p.expiry_date ASC
+    `, params);
 
-  // --- NEW: Next Month (Entirety of the following calendar month) ---
-  const nextMonth = await query(`
-    ${baseSelect} 
-    WHERE p.expiry_date BETWEEN DATE_ADD(LAST_DAY(CURDATE()), INTERVAL 1 DAY) 
-    AND LAST_DAY(DATE_ADD(CURDATE(), INTERVAL 1 MONTH)) 
-    ${filter} 
-    ORDER BY p.expiry_date ASC`, params);
+    // 3️⃣ This Week (1–7 days)
+    const week = await query(`
+      ${selectWithDays} 
+      WHERE DATEDIFF(p.expiry_date, CURDATE()) BETWEEN 1 AND 7
+      ${filter}
+      ORDER BY p.expiry_date ASC
+    `, params);
 
-  // 4. 30-Day Outlook
-  const thirtyDays = await query(`${baseSelect} WHERE p.expiry_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 1 DAY) AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) ${filter} ORDER BY p.expiry_date ASC`, params);
+    // 4️⃣ This Month (8–30 days)
+    const month = await query(`
+      ${selectWithDays} 
+      WHERE DATEDIFF(p.expiry_date, CURDATE()) BETWEEN 8 AND 30
+      ${filter}
+      ORDER BY p.expiry_date ASC
+    `, params);
 
-  // 365_Day Outlook 
-  const yearly = await query(`
-    ${baseSelect} 
-    WHERE p.expiry_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 1 DAY) 
-    AND DATE_ADD(CURDATE(), INTERVAL 1 YEAR) 
-    ${filter} 
-    ORDER BY p.expiry_date ASC`, params);
+    // 5️⃣ Next Month / Future (31–365 days)
+    const nextMonth = await query(`
+      ${selectWithDays} 
+      WHERE DATEDIFF(p.expiry_date, CURDATE()) BETWEEN 31 AND 365
+      ${filter}
+      ORDER BY p.expiry_date ASC
+    `, params);
 
-  // 5. Expired
-  const expired = await query(`
-    ${baseSelect.replace('f.followup_status', 'DATEDIFF(CURDATE(), p.expiry_date) AS days_overdue, f.followup_status')}
-    WHERE p.expiry_date < CURDATE() ${filter} 
-    ORDER BY p.expiry_date DESC`, params);
+    // 6️⃣ 30-Day Exact Outlook
+    const thirtyDays = await query(`
+      ${selectWithDays} 
+      WHERE DATEDIFF(p.expiry_date, CURDATE()) = 30
+      ${filter}
+      ORDER BY p.expiry_date ASC
+    `, params);
 
-  // Send the combined response including nextMonth
-  res.json({ today, week, month, nextMonth, thirtyDays, yearly, expired });
+    // 7️⃣ 365-Day Exact Outlook
+    const yearly = await query(`
+      ${selectWithDays} 
+      WHERE DATEDIFF(p.expiry_date, CURDATE()) = 365
+      ${filter}
+      ORDER BY p.expiry_date ASC
+    `, params);
+
+    res.json({ expired, today, week, month, nextMonth, thirtyDays, yearly });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 // ======================== SMS LOGS ========================
 app.get("/sms/logs", isAuthenticated, async (req,res)=>{ // Added 'cost' to the SELECT statement

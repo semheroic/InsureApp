@@ -105,7 +105,9 @@ export const PolicyTable = ({
     // 2. Filter by Date Range
     if (startDate || endDate) {
       results = results.filter((p: any) => {
-        const policyDate = new Date(p.expiry_date || p.expiryDate);
+        const policyDate = new Date(
+  (p.expiry_date || p.expiryDate) + "T00:00:00"
+);
         policyDate.setHours(0, 0, 0, 0);
 
         if (startDate && endDate) {

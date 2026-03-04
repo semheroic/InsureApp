@@ -11,7 +11,7 @@ import {
   Milestone, 
   Loader2, 
   Forward,
-  ShieldCheck // Added for Next Annual
+  ShieldCheck 
 } from "lucide-react";
 
 import { PageHeader } from "@/components/Expiry/PageHeader";
@@ -24,7 +24,7 @@ interface ExtendedExpiryData extends ExpiryData {
   thirtyDays: any[]; 
   yearly: any[]; 
   nextMonth: any[];
-  nextAnnual: any[]; // Added logic
+  nextAnnual: any[]; 
 }
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -43,7 +43,7 @@ export const ExpiryReport = () => {
     expired: [],
     thirtyDays: [],
     yearly: [],
-    nextAnnual: [] // Initialized
+    nextAnnual: [] 
   });
   const [loading, setLoading] = useState(false);
 
@@ -63,7 +63,7 @@ export const ExpiryReport = () => {
         expired: result.expired || [],
         thirtyDays: result.thirtyDays || [],
         yearly: result.yearly || [],
-        nextAnnual: result.nextAnnual || [] // Hydrated from API
+        nextAnnual: result.nextAnnual || [] 
       });
     } catch (err) {
       console.error(err);
@@ -84,18 +84,26 @@ export const ExpiryReport = () => {
   }, [fetchPolicies]);
 
   const tabs = useMemo(() => [
-    { key: "today", label: "Today", data: data.today, icon: Clock, color: "text-blue-500", badge: "bg-blue-100 dark:bg-blue-900/30 text-blue-600" },
-    { key: "week", label: "This Week", data: data.week, icon: Calendar, color: "text-purple-500", badge: "bg-purple-100 dark:bg-purple-900/30 text-purple-600" },
-    { key: "month", label: "This Month", data: data.month, icon: AlertCircle, color: "text-orange-500", badge: "bg-orange-100 dark:bg-orange-900/30 text-orange-600" },
+    { key: "today", label: "Today", data: data.today, icon: Clock, color: "text-rose-500", badge: "bg-rose-100 dark:bg-rose-900/30 text-rose-600" },
+    { key: "week", label: "This Week", data: data.week, icon: Calendar, color: "text-amber-500", badge: "bg-amber-100 dark:bg-amber-900/30 text-amber-600" },
+    { key: "month", label: "This Month", data: data.month, icon: AlertCircle, color: "text-blue-500", badge: "bg-blue-100 dark:bg-blue-900/30 text-blue-600" },
+    { key: "thirtyDays", label: "30-Day", data: data.thirtyDays, icon: Zap, color: "text-violet-500", badge: "bg-violet-100 dark:bg-violet-900/40 text-violet-600" },
     { key: "nextMonth", label: "Next Month", data: data.nextMonth, icon: Forward, color: "text-indigo-500", badge: "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600" },
-    { key: "thirtyDays", label: "30-Day", data: data.thirtyDays, icon: Zap, color: "text-cyan-500", badge: "bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600" },
-    { key: "yearly", label: "Annual", data: data.yearly, icon: Milestone, color: "text-emerald-500", badge: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600" },
-    { key: "nextAnnual", label: "Future", data: data.nextAnnual, icon: ShieldCheck, color: "text-teal-500", badge: "bg-teal-100 dark:bg-teal-900/40 text-teal-600" },
-    { key: "expired", label: "Expired", data: data.expired, icon: ShieldAlert, color: "text-red-500", badge: "bg-red-100 dark:bg-red-900/30 text-red-600" },
+    { key: "yearly", label: "Annual", data: data.yearly, icon: Milestone, color: "text-cyan-500", badge: "bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600" },
+    { key: "nextAnnual", label: "Future", data: data.nextAnnual, icon: ShieldCheck, color: "text-emerald-500", badge: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600" },
+    { 
+        key: "expired", 
+        label: "Expired", 
+        data: data.expired, 
+        icon: ShieldAlert, 
+        color: "text-red-600", 
+        // Force the badge to be Red for the Expired tab
+        badge: "bg-red-100 dark:bg-red-900/40 text-red-600 border border-red-200 dark:border-red-800" 
+    },
   ], [data]);
 
   return (
-    <div className="p-4 md:p-8 space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out font-sans">
+    <div className="p-4 md:p-8 space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out font-sans overflow-x-hidden">
       
       <div className="relative flex justify-between items-center">
         <PageHeader 
@@ -103,7 +111,7 @@ export const ExpiryReport = () => {
           onFilterChange={setCompanyFilter} 
         />
         {loading && (
-          <div className="absolute right-0 top-0 md:relative">
+          <div className="ml-2 flex-shrink-0">
             <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
           </div>
         )}
@@ -117,23 +125,24 @@ export const ExpiryReport = () => {
         <Tabs defaultValue="today" className="w-full">
           
           <div className="px-4 md:px-6 pt-6 pb-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/20">
-            <div className="overflow-x-auto pb-2 scrollbar-hide">
-              <TabsList className="h-11 md:h-12 flex w-max min-w-full md:w-full bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200/50 dark:border-slate-800">
+            {/* Scrollable Container logic */}
+            <div className="overflow-x-auto pb-3 scrollbar-hide snap-x snap-mandatory">
+              <TabsList className="h-12 flex w-max min-w-full bg-slate-100 dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200/50 dark:border-slate-800">
                 {tabs.map(t => (
                   <TabsTrigger 
                     key={t.key} 
                     value={t.key}
                     className={cn(
-                      "flex-1 px-3 md:px-4 gap-1.5 md:gap-2 text-[10px] md:text-[12px] font-bold tracking-tight transition-all duration-300 rounded-lg whitespace-nowrap",
+                      // flex-none + w-max ensures tabs never shrink and always show full text
+                      "flex-none snap-center px-4 md:px-6 gap-2 text-[11px] md:text-[13px] font-bold tracking-tight transition-all duration-300 rounded-lg whitespace-nowrap",
                       "data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-slate-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
                     )}
                   >
-                    <t.icon className={cn("w-3.5 h-3.5 shrink-0", t.color)} strokeWidth={2.5} />
-                    <span className="hidden lg:inline">{t.label}</span>
-                    <span className="lg:hidden inline">{t.label.split(' ')[0]}</span>
+                    <t.icon className={cn("w-4 h-4 shrink-0", t.color)} strokeWidth={2.5} />
+                    <span>{t.label}</span>
                     
                     <span className={cn(
-                      "ml-0.5 px-1.5 py-0.5 rounded-md text-[9px] md:text-[10px] font-mono font-bold transition-colors",
+                      "ml-1 px-2 py-0.5 rounded-full text-[10px] md:text-[11px] font-mono font-bold transition-all",
                       t.badge
                     )}>
                       {t.data?.length || 0}

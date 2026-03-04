@@ -21,129 +21,143 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
                 (data.expired?.length || 0) +
                 (data.nextAnnual?.length || 0) || 1;
 
-  // Stats reorganized in your specific ascending order
+  // Bento Redesign: Organized chronologically (Today -> Future -> Expired)
   const stats = [
     {
-      label: "This Week",
-      count: (data.today?.length || 0) + (data.week?.length || 0),
-      description: "Immediate upcoming renewals",
+      label: "Today",
+      count: data.today?.length || 0,
+      description: "Critical actions today",
       icon: AlertCircle,
       theme: "rose",
       bg: "bg-rose-500/10",
       iconBg: "bg-rose-500", 
       text: "text-rose-600 dark:text-rose-400",
       iconColor: "text-white",
-      className: "lg:col-span-1 lg:row-span-1",
+      className: "lg:col-span-1 lg:row-span-1", // Small square
     },
     {
-      label: "This Month",
-      count: data.month?.length || 0,
-      description: "Current month end",
-      icon: CalendarDays,
-      theme: "blue",
-      bg: "bg-blue-500/10",
-      iconBg: "bg-blue-500",
-      text: "text-blue-600 dark:text-blue-400",
+      label: "This Week",
+      count: data.week?.length || 0,
+      description: "Next 7 days",
+      icon: Hourglass,
+      theme: "amber",
+      bg: "bg-amber-500/10",
+      iconBg: "bg-amber-500",
+      text: "text-amber-600 dark:text-amber-400",
       iconColor: "text-white",
-      className: "lg:col-span-1 lg:row-span-1",
+      className: "lg:col-span-1 lg:row-span-1", // Small square
     },
     {
-      label: "Next Month",
-      count: data.nextMonth?.length || 0,
-      description: "Short-term pipeline",
-      icon: Forward,
-      theme: "indigo",
-      bg: "bg-indigo-500/10",
-      iconBg: "bg-indigo-500",
-      text: "text-indigo-600 dark:text-indigo-400",
-      iconColor: "text-white",
-      className: "lg:col-span-1 lg:row-span-1",
-    },
-    {
-      label: "30-Day",
+      label: "30-Day Outlook",
       count: data.thirtyDays?.length || 0,
-      description: "Strategic rolling forecast",
+      description: "Strategic rolling 30-day forecast and pipeline analysis",
       icon: BarChart3,
       theme: "violet",
       bg: "bg-violet-500/10",
       iconBg: "bg-violet-600",
       text: "text-violet-600 dark:text-violet-400",
       iconColor: "text-white",
-      className: "lg:col-span-1 lg:row-span-2", // Bento Big Card
+      className: "lg:col-span-1 lg:row-span-2", // TALL card
       isPremium: true,
     },
     {
-      label: "Annual",
-      count: data.nextAnnual?.length || 0,
-      description: "Upcoming yearly renewals",
-      icon: CalendarCheck,
-      theme: "cyan",
-      bg: "bg-cyan-500/10",
-      iconBg: "bg-cyan-500",
-      text: "text-cyan-600 dark:text-cyan-400",
+      label: "This Month",
+      count: data.month?.length || 0,
+      description: "Due by month end",
+      icon: CalendarDays,
+      theme: "blue",
+      bg: "bg-blue-500/10",
+      iconBg: "bg-blue-500",
+      text: "text-blue-600 dark:text-blue-400",
       iconColor: "text-white",
-      className: "lg:col-span-1 lg:row-span-1",
+      className: "lg:col-span-1 lg:row-span-1", // Small square
     },
     {
-      label: "Future",
+      label: "Next Month",
+      count: data.nextMonth?.length || 0,
+      description: "Upcoming pipeline",
+      icon: Forward,
+      theme: "indigo",
+      bg: "bg-indigo-500/10",
+      iconBg: "bg-indigo-500",
+      text: "text-indigo-600 dark:text-indigo-400",
+      iconColor: "text-white",
+      className: "lg:col-span-1 lg:row-span-1", // Small square
+    },
+    {
+      label: "Future Forecast",
       count: data.yearly?.length || 0,
-      description: "Comprehensive 365-day outlook",
+      description: "Comprehensive 365-day annual pipeline overview including all future scheduled renewals and milestones.",
       icon: Milestone,
       theme: "emerald",
       bg: "bg-emerald-500/10",
       iconBg: "bg-emerald-500",
       text: "text-emerald-600 dark:text-emerald-400",
       iconColor: "text-white",
-      className: "lg:col-span-2 lg:row-span-2", // Bento Big Card
+      className: "lg:col-span-2 lg:row-span-2", // BIG SQUARE (Hero)
       isPremium: true,
+    },
+    {
+      label: "Annual",
+      count: data.nextAnnual?.length || 0,
+      description: "Next yearly cycle",
+      icon: CalendarCheck,
+      theme: "cyan",
+      bg: "bg-cyan-500/10",
+      iconBg: "bg-cyan-500",
+      text: "text-cyan-600 dark:text-cyan-400",
+      iconColor: "text-white",
+      className: "lg:col-span-1 lg:row-span-1", // Small square
     },
     {
       label: "Expired",
       count: data.expired?.length || 0,
-      description: "Lapsed and overdue items",
+      description: "Lapsed policies",
       icon: History,
       theme: "slate",
       bg: "bg-slate-500/10",
       iconBg: "bg-slate-600",
       text: "text-slate-600 dark:text-slate-300",
       iconColor: "text-white",
-      className: "lg:col-span-1 lg:row-span-1",
+      className: "lg:col-span-1 lg:row-span-1", // Small square
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 auto-rows-[140px] w-full">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 auto-rows-[160px] w-full">
       {stats.map((stat, index) => {
         const percentage = Math.round((stat.count / total) * 100);
-        const isBig = stat.className.includes("row-span-2");
+        const isBig = stat.className.includes("lg:col-span-2");
+        const isTall = stat.className.includes("lg:row-span-2") && !isBig;
 
         return (
           <motion.div
             key={stat.label}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: index * 0.04, duration: 0.5, ease: "easeOut" }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05, duration: 0.4 }}
             className={cn("relative h-full", stat.className)}
           >
             <Card 
               className={cn(
-                "relative h-full border-none overflow-hidden transition-all duration-500 rounded-[28px] group flex flex-col p-6",
-                "bg-white dark:bg-slate-900 shadow-sm hover:shadow-xl",
+                "relative h-full border-none overflow-hidden transition-all duration-500 rounded-[32px] group flex flex-col p-6",
+                "bg-white dark:bg-slate-900 shadow-sm hover:shadow-2xl hover:-translate-y-1",
                 stat.isPremium && "ring-1 ring-slate-200 dark:ring-slate-800"
               )}
             >
-              <div className={cn("absolute inset-0 opacity-10 transition-opacity group-hover:opacity-20", stat.bg)} />
+              {/* Bento Background Decor */}
+              <div className={cn("absolute inset-0 opacity-5 transition-opacity group-hover:opacity-15", stat.bg)} />
               
               <div className="relative z-10 flex flex-col h-full">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400/80">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400/80">
                       {stat.label}
                     </p>
                     <div className="flex items-baseline gap-2">
                       <h2 className={cn(
-                        "font-black tracking-tighter text-slate-900 dark:text-white tabular-nums transition-all",
-                        isBig ? "text-5xl" : "text-2xl"
+                        "font-black tracking-tighter text-slate-900 dark:text-white tabular-nums",
+                        isBig ? "text-6xl" : "text-3xl"
                       )}>
                         {stat.count}
                       </h2>
@@ -152,48 +166,46 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
                   </div>
 
                   <div className={cn(
-                    "flex shrink-0 items-center justify-center rounded-2xl transition-transform duration-500 group-hover:rotate-12",
-                    isBig ? "h-14 w-14" : "h-10 w-10",
+                    "flex shrink-0 items-center justify-center rounded-2xl transition-all duration-500 group-hover:scale-110",
+                    isBig ? "h-16 w-16" : "h-12 w-12",
                     stat.iconBg,
                     stat.iconColor
                   )}>
-                    <stat.icon className={isBig ? "h-7 w-7" : "h-5 w-5"} strokeWidth={2.5} />
+                    <stat.icon className={isBig ? "h-8 w-8" : "h-6 w-6"} strokeWidth={2.5} />
                   </div>
                 </div>
 
                 <div className="mt-auto space-y-4">
-                  <div className="flex items-center justify-between">
-                    <p className={cn(
-                        "font-bold tracking-tight text-slate-500 dark:text-slate-400 line-clamp-2",
-                        isBig ? "text-sm max-w-[180px]" : "text-[10px]"
-                    )}>
-                      {stat.description}
-                    </p>
-                    <div className={cn(
-                      "text-[10px] font-mono font-black px-2 py-1 rounded-lg border bg-white dark:bg-slate-800",
-                      stat.text
-                    )}>
-                      {percentage > 100 ? "100+" : percentage}%
-                    </div>
-                  </div>
+                  <p className={cn(
+                      "font-semibold tracking-tight text-slate-500 dark:text-slate-400",
+                      isBig ? "text-base max-w-[240px]" : "text-[11px] line-clamp-2"
+                  )}>
+                    {stat.description}
+                  </p>
                   
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.min(percentage, 100)}%` }}
-                      transition={{ duration: 1.5, ease: "anticipate" }}
-                      className={cn(
-                        "h-full rounded-full",
-                        stat.theme === "rose" && "bg-rose-500",
-                        stat.theme === "amber" && "bg-amber-500",
-                        stat.theme === "blue" && "bg-blue-500",
-                        stat.theme === "indigo" && "bg-indigo-500",
-                        stat.theme === "violet" && "bg-violet-500",
-                        stat.theme === "emerald" && "bg-emerald-500",
-                        stat.theme === "slate" && "bg-slate-500",
-                        stat.theme === "cyan" && "bg-cyan-500"
-                      )}
-                    />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-tighter">
+                      <span className="text-slate-400">Relative Weight</span>
+                      <span className={stat.text}>{percentage}%</span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(percentage, 100)}%` }}
+                        transition={{ duration: 1, ease: "circOut" }}
+                        className={cn(
+                          "h-full rounded-full",
+                          stat.theme === "rose" && "bg-rose-500",
+                          stat.theme === "amber" && "bg-amber-500",
+                          stat.theme === "blue" && "bg-blue-500",
+                          stat.theme === "indigo" && "bg-indigo-500",
+                          stat.theme === "violet" && "bg-violet-500",
+                          stat.theme === "emerald" && "bg-emerald-500",
+                          stat.theme === "slate" && "bg-slate-500",
+                          stat.theme === "cyan" && "bg-cyan-500"
+                        )}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

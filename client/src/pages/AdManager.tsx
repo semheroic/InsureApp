@@ -119,13 +119,13 @@ export const AdManager: React.FC = () => {
   };
 
   return (
-    <div className="px-4 py-8 max-w-7xl mx-auto space-y-8 min-h-screen overflow-x-hidden">
+    <div className="px-4 py-8 max-w-7xl mx-auto space-y-8 min-h-screen">
       
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 flex-wrap">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">Ad Campaign Manager</h1>
-          <p className="text-slate-500 font-medium max-w-md">Control the sponsor media shown on dashboard cards.</p>
+          <p className="text-slate-500 font-medium">Control the sponsor media shown on dashboard cards.</p>
         </div>
 
         <Dialog open={isAdding} onOpenChange={(val) => { setIsAdding(val); if(!val) resetForm(); }}>
@@ -135,7 +135,7 @@ export const AdManager: React.FC = () => {
             </Button>
           </DialogTrigger>
 
-          <DialogContent className="w-[calc(100vw-2rem)] sm:w-auto sm:max-w-[550px] p-0 overflow-hidden border-none shadow-2xl rounded-[32px]">
+          <DialogContent className="w-full sm:max-w-[550px] p-0 overflow-hidden border-none shadow-2xl rounded-[32px]">
             <div className="relative bg-slate-900 p-8 text-white">
               <DialogClose className="absolute right-6 top-6 rounded-full p-2 hover:bg-white/10 transition-colors"><Plus className="rotate-45" size={18} /></DialogClose>
               <div className="flex items-center gap-5">
@@ -244,7 +244,7 @@ export const AdManager: React.FC = () => {
       </div>
 
       {/* Ads Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-x-auto">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {isLoading ? (
           <div className="col-span-full flex flex-col items-center justify-center py-32 space-y-4">
             <Loader2 className="animate-spin text-indigo-600 w-12 h-12" />

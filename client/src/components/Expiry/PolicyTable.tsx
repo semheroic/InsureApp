@@ -64,7 +64,7 @@ const ActionButton = ({ icon: Icon, active, isLoading, color, onClick }: ActionB
 };
 
 export const PolicyTable = ({
-  data = [], // Default to empty array to prevent map errors
+  data,
   followUpEndpoint,
   refreshData,
   showOverdue,
@@ -85,25 +85,21 @@ export const PolicyTable = ({
   const [editedMessage, setEditedMessage] = useState("");
   const [copied, setCopied] = useState(false);
 
-  // Filter Logic: Handles Search, Date Range, and Today/Future segments
   const filteredData = useMemo(() => {
-    if (!Array.isArray(data)) return [];
     let results = [...data];
     const term = searchQuery.toLowerCase().trim();
 
     if (term) {
       results = results.filter((p: any) => 
-        String(p.plate || "").toLowerCase().includes(term) || 
-        String(p.contact || "").toLowerCase().includes(term) ||
-        String(p.owner || "").toLowerCase().includes(term)
+        String(p.plate).toLowerCase().includes(term) || 
+        String(p.contact).toLowerCase().includes(term) ||
+        String(p.owner).toLowerCase().includes(term)
       );
     }
 
     if (startDate || endDate) {
       results = results.filter((p: any) => {
-        const dateStr = p.expiry_date || p.expiryDate;
-        if (!dateStr) return false;
-        const policyDate = new Date(dateStr + "T00:00:00");
+        const policyDate = new Date((p.expiry_date || p.expiryDate) + "T00:00:00");
         policyDate.setHours(0, 0, 0, 0);
 
         if (startDate && endDate) {
@@ -134,8 +130,7 @@ export const PolicyTable = ({
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const expiryDateStr = policy.expiry_date || policy.expiryDate;
-    const expiry = expiryDateStr ? new Date(expiryDateStr + "T00:00:00") : new Date();
+    const expiry = new Date(policy.expiry_date || policy.expiryDate);
     expiry.setHours(0, 0, 0, 0);
     
     const diffTime = expiry.getTime() - today.getTime();
@@ -154,6 +149,7 @@ export const PolicyTable = ({
         en: `the insurance for ${plate} is expiring today`
       };
     } else if (diffDays > 365) {
+      // Next Annual / Future Logic
       statusPhrase = {
         rw: `ubwishingizi bwa ${plate} buracyari buzima, buzashira nyuma y'umwaka (iminsi ${diffDays})`,
         en: `the insurance for ${plate} is still active and will expire in more than a year (${diffDays} days)`
@@ -187,7 +183,7 @@ export const PolicyTable = ({
   };
 
   const handleWhatsAppRedirect = () => {
-    if (!messagePolicy || !messagePolicy.contact) return;
+    if (!messagePolicy) return;
     let digits = messagePolicy.contact.replace(/\D/g, "");
     let cleanNumber = digits.startsWith("250") ? digits : (digits.startsWith("0") ? "250" + digits.substring(1) : "250" + digits);
     const encodedMsg = encodeURIComponent(editedMessage);
@@ -266,9 +262,8 @@ export const PolicyTable = ({
 
   return (
     <div className="space-y-6 font-sans">
-      {/* Contact Info Dialog */}
       <Dialog open={!!selectedPolicy} onOpenChange={() => setSelectedPolicy(null)}>
-        <DialogContent className="w-[calc(100vw-2rem)] sm:w-auto sm:max-w-[400px] rounded-[24px] border-slate-200 dark:border-slate-800">
+        <DialogContent className="sm:max-w-[400px] rounded-[24px] border-slate-200 dark:border-slate-800">
           <DialogHeader>
             <DialogTitle className="text-[16px] font-bold tracking-tight">Contact Information</DialogTitle>
           </DialogHeader>
@@ -301,9 +296,8 @@ export const PolicyTable = ({
         </DialogContent>
       </Dialog>
 
-      {/* Message Generation Dialog */}
       <Dialog open={!!messagePolicy} onOpenChange={() => setMessagePolicy(null)}>
-        <DialogContent className="w-[calc(100vw-2rem)] sm:w-auto sm:max-w-[500px] rounded-[32px] border-none shadow-2xl p-0 overflow-hidden">
+        <DialogContent className="sm:max-w-[500px] rounded-[32px] border-none shadow-2xl p-0 overflow-hidden">
           <div className="bg-slate-900 p-6 text-white">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -385,7 +379,6 @@ export const PolicyTable = ({
         </DialogContent>
       </Dialog>
 
-      {/* Toolbar */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
         <div className="flex flex-col md:flex-row items-center gap-3 flex-1">
           {searchable && (
@@ -445,16 +438,13 @@ export const PolicyTable = ({
         </Button>
       </div>
 
-      {/* Table Section */}
       <div className="rounded-[24px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
-        {/* allow horizontal scrolling on small screens */}
-        <div className="overflow-x-auto w-full">
-          <Table>
+        <Table>
           <TableHeader>
             <TableRow className="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800">
               <TableHead className="py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 pl-8">Plate</TableHead>
               <TableHead className="py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Holder</TableHead>
-              <TableHead className="py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 hidden sm:table-cell">Provider</TableHead>
+              <TableHead className="py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Provider</TableHead>
               <TableHead className="py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 text-center">Expiry</TableHead>
               {showOverdue && <TableHead className="py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 text-center">Lapsed</TableHead>}
               <TableHead className="py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 text-right pr-8">Actions</TableHead>
@@ -491,7 +481,7 @@ export const PolicyTable = ({
                       </div>
                     </TableCell>
 
-                    <TableCell className="py-4 hidden sm:table-cell">
+                    <TableCell className="py-4">
                       <div className="flex items-center gap-2">
                         <Shield size={12} className="text-slate-400" />
                         <span className="font-semibold text-[12px] tracking-tight text-slate-700 dark:text-slate-300">
@@ -507,7 +497,7 @@ export const PolicyTable = ({
                     </TableCell>
 
                     {showOverdue && (
-                      <TableCell className="text-center py-4 hidden md:table-cell">
+                      <TableCell className="text-center py-4">
                         <span className="text-[14px] font-bold text-rose-600 dark:text-rose-400 tabular-nums">
                           {policy.days_overdue}d
                         </span>
@@ -515,14 +505,14 @@ export const PolicyTable = ({
                     )}
 
                     <TableCell className="pr-8 py-4">
-                      <div className="flex flex-wrap justify-end gap-2 items-center">
+                      <div className="flex justify-end gap-2 items-center">
                         <Button
                           variant="ghost"
                           onClick={() => setSelectedPolicy(policy)}
                           className="h-9 px-3 rounded-xl gap-2 font-bold uppercase text-[10px] tracking-widest border border-transparent hover:border-slate-200 dark:hover:border-slate-800"
                         >
                           <Phone size={14} />
-                          Call
+                          Call Now
                         </Button>
 
                         <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-1" />
@@ -584,10 +574,8 @@ export const PolicyTable = ({
               </TableRow>
             )}
           </TableBody>
-          </Table>
-        </div>
+        </Table>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="px-8 py-4 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">

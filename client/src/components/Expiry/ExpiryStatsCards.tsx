@@ -1,11 +1,16 @@
 import { Card } from "@/components/ui/card";
-import { AlertCircle, CalendarDays, History, Hourglass, BarChart3, Milestone, Forward } from "lucide-react";
+import { AlertCircle, CalendarDays, History, Hourglass, BarChart3, Milestone, Forward, CalendarCheck } from "lucide-react";
 import { ExpiryData } from "@/types/policy";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
 interface ExpiryStatsCardsProps {
-  data: ExpiryData & { thirtyDays?: any[]; yearly?: any[]; nextMonth?: any[] }; 
+  data: ExpiryData & { 
+    thirtyDays?: any[]; 
+    yearly?: any[]; 
+    nextMonth?: any[]; 
+    nextAnnual?: any[] 
+  }; 
 }
 
 export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
@@ -13,57 +18,20 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
                 (data.week?.length || 0) + 
                 (data.month?.length || 0) + 
                 (data.nextMonth?.length || 0) + 
-                (data.expired?.length || 0) || 1;
+                (data.expired?.length || 0) +
+                (data.nextAnnual?.length || 0) || 1;
 
-  // Stats reorganized for Bento Hierarchy (Annual & 30-Day as lead "big" cards)
+  // Stats reorganized in your specific ascending order
   const stats = [
     {
-      label: "365-Day Outlook",
-      count: data.yearly?.length || 0,
-      description: "Comprehensive annual pipeline overview",
-      icon: Milestone,
-      theme: "emerald",
-      bg: "bg-emerald-500/10",
-      iconBg: "bg-emerald-500",
-      text: "text-emerald-600 dark:text-emerald-400",
-      iconColor: "text-white",
-      className: "lg:col-span-2 lg:row-span-2", // The "Big One"
-      isPremium: true,
-    },
-    {
-      label: "30-Day Outlook",
-      count: data.thirtyDays?.length || 0,
-      description: "Strategic rolling forecast",
-      icon: BarChart3,
-      theme: "violet",
-      bg: "bg-violet-500/10",
-      iconBg: "bg-violet-600",
-      text: "text-violet-600 dark:text-violet-400",
-      iconColor: "text-white",
-      className: "lg:col-span-1 lg:row-span-2", // The other "Big One"
-      isPremium: true,
-    },
-    {
-      label: "Critical Today",
-      count: data.today?.length || 0,
-      description: "Immediate action",
+      label: "This Week",
+      count: (data.today?.length || 0) + (data.week?.length || 0),
+      description: "Immediate upcoming renewals",
       icon: AlertCircle,
       theme: "rose",
       bg: "bg-rose-500/10",
       iconBg: "bg-rose-500", 
       text: "text-rose-600 dark:text-rose-400",
-      iconColor: "text-white",
-      className: "lg:col-span-1 lg:row-span-1",
-    },
-    {
-      label: "Next 7 Days",
-      count: data.week?.length || 0,
-      description: "Upcoming renewals",
-      icon: Hourglass,
-      theme: "amber",
-      bg: "bg-amber-500/10",
-      iconBg: "bg-amber-500",
-      text: "text-amber-600 dark:text-amber-400",
       iconColor: "text-white",
       className: "lg:col-span-1 lg:row-span-1",
     },
@@ -82,7 +50,7 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
     {
       label: "Next Month",
       count: data.nextMonth?.length || 0,
-      description: "Future pipeline",
+      description: "Short-term pipeline",
       icon: Forward,
       theme: "indigo",
       bg: "bg-indigo-500/10",
@@ -92,9 +60,47 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
       className: "lg:col-span-1 lg:row-span-1",
     },
     {
-      label: "Overdue Items",
+      label: "30-Day",
+      count: data.thirtyDays?.length || 0,
+      description: "Strategic rolling forecast",
+      icon: BarChart3,
+      theme: "violet",
+      bg: "bg-violet-500/10",
+      iconBg: "bg-violet-600",
+      text: "text-violet-600 dark:text-violet-400",
+      iconColor: "text-white",
+      className: "lg:col-span-1 lg:row-span-2", // Bento Big Card
+      isPremium: true,
+    },
+    {
+      label: "Annual",
+      count: data.nextAnnual?.length || 0,
+      description: "Upcoming yearly renewals",
+      icon: CalendarCheck,
+      theme: "cyan",
+      bg: "bg-cyan-500/10",
+      iconBg: "bg-cyan-500",
+      text: "text-cyan-600 dark:text-cyan-400",
+      iconColor: "text-white",
+      className: "lg:col-span-1 lg:row-span-1",
+    },
+    {
+      label: "Future",
+      count: data.yearly?.length || 0,
+      description: "Comprehensive 365-day outlook",
+      icon: Milestone,
+      theme: "emerald",
+      bg: "bg-emerald-500/10",
+      iconBg: "bg-emerald-500",
+      text: "text-emerald-600 dark:text-emerald-400",
+      iconColor: "text-white",
+      className: "lg:col-span-2 lg:row-span-2", // Bento Big Card
+      isPremium: true,
+    },
+    {
+      label: "Expired",
       count: data.expired?.length || 0,
-      description: "Lapsed policies",
+      description: "Lapsed and overdue items",
       icon: History,
       theme: "slate",
       bg: "bg-slate-500/10",
@@ -126,7 +132,6 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
                 stat.isPremium && "ring-1 ring-slate-200 dark:ring-slate-800"
               )}
             >
-              {/* Subtle background glow for Bento feel */}
               <div className={cn("absolute inset-0 opacity-10 transition-opacity group-hover:opacity-20", stat.bg)} />
               
               <div className="relative z-10 flex flex-col h-full">
@@ -185,7 +190,8 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
                         stat.theme === "indigo" && "bg-indigo-500",
                         stat.theme === "violet" && "bg-violet-500",
                         stat.theme === "emerald" && "bg-emerald-500",
-                        stat.theme === "slate" && "bg-slate-500"
+                        stat.theme === "slate" && "bg-slate-500",
+                        stat.theme === "cyan" && "bg-cyan-500"
                       )}
                     />
                   </div>

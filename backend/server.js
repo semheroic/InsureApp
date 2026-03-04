@@ -61,7 +61,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // ======================== DATABASE ========================
 console.log("ENV:", process.env.NODE_ENV);
 console.log("MYSQLHOST exists:", !!process.env.MYSQLHOST);
-const isProduction = process.env.NODE_ENV === "production"; // Force local mode for development/testing
+const isProduction =process.env.NODE_ENV === "production"; // Force local mode for development/testing
 const db = mysql.createPool({
   host: isProduction ? process.env.MYSQLHOST : process.env.DB_HOST,
   user:  isProduction ? process.env.MYSQLUSER : process.env.DB_USER,
@@ -839,8 +839,16 @@ app.get("/api/expiry-report", async (req, res) => {
       ${filter}
       ORDER BY p.expiry_date ASC
     `, params);
+    
+    // 8️⃣ Next Annual (More than 365 days remaining)
+   const nextAnnual = await query(`
+  ${selectWithDays} 
+  WHERE DATEDIFF(p.expiry_date, CURDATE()) > 365
+  ${filter}
+  ORDER BY p.expiry_date ASC
+`, params);
 
-    res.json({ expired, today, week, month, nextMonth, thirtyDays, yearly });
+    res.json({ expired, today, week, month, nextMonth, thirtyDays, yearly, nextAnnual });
 
   } catch (err) {
     console.error(err);

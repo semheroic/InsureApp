@@ -75,15 +75,11 @@ export const PolicyTable = ({
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [selectedPolicy, setSelectedPolicy] = useState<any>(null);
   
-  // Date Range State
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-
-  // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const recordsPerPage = 10;
 
-  // Message Modal States
   const [messagePolicy, setMessagePolicy] = useState<any>(null);
   const [lang, setLang] = useState<"rw" | "en">("rw");
   const [editedMessage, setEditedMessage] = useState("");
@@ -93,7 +89,6 @@ export const PolicyTable = ({
     let results = [...data];
     const term = searchQuery.toLowerCase().trim();
 
-    // 1. Filter by Search Term
     if (term) {
       results = results.filter((p: any) => 
         String(p.plate).toLowerCase().includes(term) || 
@@ -102,12 +97,9 @@ export const PolicyTable = ({
       );
     }
 
-    // 2. Filter by Date Range
     if (startDate || endDate) {
       results = results.filter((p: any) => {
-        const policyDate = new Date(
-  (p.expiry_date || p.expiryDate) + "T00:00:00"
-);
+        const policyDate = new Date((p.expiry_date || p.expiryDate) + "T00:00:00");
         policyDate.setHours(0, 0, 0, 0);
 
         if (startDate && endDate) {
@@ -155,6 +147,12 @@ export const PolicyTable = ({
       statusPhrase = {
         rw: `ubwishingizi bwa ${plate} buri burangire uyu munsi`,
         en: `the insurance for ${plate} is expiring today`
+      };
+    } else if (diffDays > 365) {
+      // Next Annual / Future Logic
+      statusPhrase = {
+        rw: `ubwishingizi bwa ${plate} buracyari buzima, buzashira nyuma y'umwaka (iminsi ${diffDays})`,
+        en: `the insurance for ${plate} is still active and will expire in more than a year (${diffDays} days)`
       };
     } else {
       statusPhrase = {
@@ -264,7 +262,6 @@ export const PolicyTable = ({
 
   return (
     <div className="space-y-6 font-sans">
-      {/* Contact Dialog */}
       <Dialog open={!!selectedPolicy} onOpenChange={() => setSelectedPolicy(null)}>
         <DialogContent className="sm:max-w-[400px] rounded-[24px] border-slate-200 dark:border-slate-800">
           <DialogHeader>
@@ -299,7 +296,6 @@ export const PolicyTable = ({
         </DialogContent>
       </Dialog>
 
-      {/* Message Dialog */}
       <Dialog open={!!messagePolicy} onOpenChange={() => setMessagePolicy(null)}>
         <DialogContent className="sm:max-w-[500px] rounded-[32px] border-none shadow-2xl p-0 overflow-hidden">
           <div className="bg-slate-900 p-6 text-white">
@@ -383,7 +379,6 @@ export const PolicyTable = ({
         </DialogContent>
       </Dialog>
 
-      {/* Filters Section */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
         <div className="flex flex-col md:flex-row items-center gap-3 flex-1">
           {searchable && (
@@ -401,7 +396,6 @@ export const PolicyTable = ({
             </div>
           )}
 
-          {/* Date Picker Controls */}
           <div className="flex items-center gap-2 w-full md:w-auto">
             <div className="relative flex-1 md:w-40 group">
               <CalendarIcon className="absolute left-3 h-3.5 w-3.5 text-slate-400 z-10 top-1/2 -translate-y-1/2" />
@@ -444,7 +438,6 @@ export const PolicyTable = ({
         </Button>
       </div>
 
-      {/* Main Table */}
       <div className="rounded-[24px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
@@ -583,7 +576,6 @@ export const PolicyTable = ({
           </TableBody>
         </Table>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="px-8 py-4 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">

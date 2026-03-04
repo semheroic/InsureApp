@@ -2,8 +2,17 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-// Added 'CalendarArrowRight' or 'Forward' for Next Month
-import { Clock, Calendar, AlertCircle, ShieldAlert, Zap, Milestone, Loader2, Forward } from "lucide-react";
+import { 
+  Clock, 
+  Calendar, 
+  AlertCircle, 
+  ShieldAlert, 
+  Zap, 
+  Milestone, 
+  Loader2, 
+  Forward,
+  ShieldCheck // Added for Next Annual
+} from "lucide-react";
 
 import { PageHeader } from "@/components/Expiry/PageHeader";
 import { ExpiryStatsCards } from "@/components/Expiry/ExpiryStatsCards";
@@ -14,7 +23,8 @@ import { cn } from "@/lib/utils";
 interface ExtendedExpiryData extends ExpiryData {
   thirtyDays: any[]; 
   yearly: any[]; 
-  nextMonth: any[]; // Integrated
+  nextMonth: any[];
+  nextAnnual: any[]; // Added logic
 }
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -29,10 +39,11 @@ export const ExpiryReport = () => {
     today: [], 
     week: [], 
     month: [], 
-    nextMonth: [], // Initialized
+    nextMonth: [], 
     expired: [],
     thirtyDays: [],
-    yearly: [] 
+    yearly: [],
+    nextAnnual: [] // Initialized
   });
   const [loading, setLoading] = useState(false);
 
@@ -48,10 +59,11 @@ export const ExpiryReport = () => {
         today: result.today || [],
         week: result.week || [],
         month: result.month || [],
-        nextMonth: result.nextMonth || [], // Hydrated from API
+        nextMonth: result.nextMonth || [],
         expired: result.expired || [],
         thirtyDays: result.thirtyDays || [],
-        yearly: result.yearly || []
+        yearly: result.yearly || [],
+        nextAnnual: result.nextAnnual || [] // Hydrated from API
       });
     } catch (err) {
       console.error(err);
@@ -71,7 +83,6 @@ export const ExpiryReport = () => {
     return () => clearInterval(interval);
   }, [fetchPolicies]);
 
-  // Redesigned Tab Configuration for perfect fit and color harmony
   const tabs = useMemo(() => [
     { key: "today", label: "Today", data: data.today, icon: Clock, color: "text-blue-500", badge: "bg-blue-100 dark:bg-blue-900/30 text-blue-600" },
     { key: "week", label: "This Week", data: data.week, icon: Calendar, color: "text-purple-500", badge: "bg-purple-100 dark:bg-purple-900/30 text-purple-600" },
@@ -79,6 +90,7 @@ export const ExpiryReport = () => {
     { key: "nextMonth", label: "Next Month", data: data.nextMonth, icon: Forward, color: "text-indigo-500", badge: "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600" },
     { key: "thirtyDays", label: "30-Day", data: data.thirtyDays, icon: Zap, color: "text-cyan-500", badge: "bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600" },
     { key: "yearly", label: "Annual", data: data.yearly, icon: Milestone, color: "text-emerald-500", badge: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600" },
+    { key: "nextAnnual", label: "Future", data: data.nextAnnual, icon: ShieldCheck, color: "text-teal-500", badge: "bg-teal-100 dark:bg-teal-900/40 text-teal-600" },
     { key: "expired", label: "Expired", data: data.expired, icon: ShieldAlert, color: "text-red-500", badge: "bg-red-100 dark:bg-red-900/30 text-red-600" },
   ], [data]);
 
@@ -106,7 +118,6 @@ export const ExpiryReport = () => {
           
           <div className="px-4 md:px-6 pt-6 pb-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/20">
             <div className="overflow-x-auto pb-2 scrollbar-hide">
-              {/* Optimized TabsList: Reduced gap slightly to fit 7 items better */}
               <TabsList className="h-11 md:h-12 flex w-max min-w-full md:w-full bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200/50 dark:border-slate-800">
                 {tabs.map(t => (
                   <TabsTrigger 
@@ -119,7 +130,6 @@ export const ExpiryReport = () => {
                   >
                     <t.icon className={cn("w-3.5 h-3.5 shrink-0", t.color)} strokeWidth={2.5} />
                     <span className="hidden lg:inline">{t.label}</span>
-                    {/* Short label for smaller screens to prevent overflow */}
                     <span className="lg:hidden inline">{t.label.split(' ')[0]}</span>
                     
                     <span className={cn(

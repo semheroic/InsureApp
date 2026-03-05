@@ -1,5 +1,8 @@
 import { Card } from "@/components/ui/card";
-import { AlertCircle, CalendarDays, History, Hourglass, BarChart3, Milestone, Forward, CalendarCheck } from "lucide-react";
+import { 
+  AlertCircle, CalendarDays, History, Hourglass, 
+  BarChart3, Milestone, Forward, CalendarCheck, Clock 
+} from "lucide-react";
 import { ExpiryData } from "@/types/policy";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -14,18 +17,33 @@ interface ExpiryStatsCardsProps {
 }
 
 export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
-  const total = (data.today?.length || 0) + 
-                (data.week?.length || 0) + 
-                (data.month?.length || 0) + 
-                (data.nextMonth?.length || 0) + 
-                (data.expired?.length || 0) +
-                (data.nextAnnual?.length || 0) || 1;
+  // Safe total calculation for percentage bars
+  const total = (
+    (data.today?.length || 0) + 
+    (data.week?.length || 0) + 
+    (data.month?.length || 0) + 
+    (data.nextMonth?.length || 0) + 
+    (data.expired?.length || 0) +
+    (data.nextAnnual?.length || 0) +
+    (data.yearly?.length || 0)
+  ) || 1;
 
-  // Stats reorganized in your specific ascending order
   const stats = [
     {
+      label: "Today",
+      count: data.today?.length || 0,
+      description: "Critical actions required now",
+      icon: Clock,
+      theme: "amber",
+      bg: "bg-amber-500/10",
+      iconBg: "bg-amber-500",
+      text: "text-amber-600 dark:text-amber-400",
+      iconColor: "text-white",
+      className: "lg:col-span-1 lg:row-span-1",
+    },
+    {
       label: "This Week",
-      count: (data.today?.length || 0) + (data.week?.length || 0),
+      count: data.week?.length || 0,
       description: "Immediate upcoming renewals",
       icon: AlertCircle,
       theme: "rose",
@@ -34,6 +52,19 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
       text: "text-rose-600 dark:text-rose-400",
       iconColor: "text-white",
       className: "lg:col-span-1 lg:row-span-1",
+    },
+    {
+      label: "30-Day",
+      count: data.thirtyDays?.length || 0,
+      description: "Strategic rolling forecast for the month ahead",
+      icon: BarChart3,
+      theme: "violet",
+      bg: "bg-violet-500/10",
+      iconBg: "bg-violet-600",
+      text: "text-violet-600 dark:text-violet-400",
+      iconColor: "text-white",
+      className: "lg:col-span-1 lg:row-span-2", // Bento Vertical Tall
+      isPremium: true,
     },
     {
       label: "This Month",
@@ -60,19 +91,6 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
       className: "lg:col-span-1 lg:row-span-1",
     },
     {
-      label: "30-Day",
-      count: data.thirtyDays?.length || 0,
-      description: "Strategic rolling forecast",
-      icon: BarChart3,
-      theme: "violet",
-      bg: "bg-violet-500/10",
-      iconBg: "bg-violet-600",
-      text: "text-violet-600 dark:text-violet-400",
-      iconColor: "text-white",
-      className: "lg:col-span-1 lg:row-span-2", // Bento Big Card
-      isPremium: true,
-    },
-    {
       label: "Annual",
       count: data.nextAnnual?.length || 0,
       description: "Upcoming yearly renewals",
@@ -85,22 +103,22 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
       className: "lg:col-span-1 lg:row-span-1",
     },
     {
-      label: "Future",
+      label: "Future Outlook",
       count: data.yearly?.length || 0,
-      description: "Comprehensive 365-day outlook",
+      description: "Comprehensive 365-day perspective on all upcoming policy expirations",
       icon: Milestone,
       theme: "emerald",
       bg: "bg-emerald-500/10",
       iconBg: "bg-emerald-500",
       text: "text-emerald-600 dark:text-emerald-400",
       iconColor: "text-white",
-      className: "lg:col-span-2 lg:row-span-2", // Bento Big Card
+      className: "lg:col-span-2 lg:row-span-2", // Bento Feature Card
       isPremium: true,
     },
     {
       label: "Expired",
       count: data.expired?.length || 0,
-      description: "Lapsed and overdue items",
+      description: "Lapsed items",
       icon: History,
       theme: "slate",
       bg: "bg-slate-500/10",
@@ -120,78 +138,84 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
         return (
           <motion.div
             key={stat.label}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: index * 0.04, duration: 0.5, ease: "easeOut" }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.05, duration: 0.4 }}
             className={cn("relative h-full", stat.className)}
           >
             <Card 
               className={cn(
-                "relative h-full border-none overflow-hidden transition-all duration-500 rounded-[28px] group flex flex-col p-6",
-                "bg-white dark:bg-slate-900 shadow-sm hover:shadow-xl",
+                "relative h-full border-none overflow-hidden transition-all duration-300 rounded-[24px] group flex flex-col p-5",
+                "bg-white dark:bg-slate-900 shadow-sm hover:shadow-md",
                 stat.isPremium && "ring-1 ring-slate-200 dark:ring-slate-800"
               )}
             >
-              <div className={cn("absolute inset-0 opacity-10 transition-opacity group-hover:opacity-20", stat.bg)} />
+              {/* Animated Hover Background */}
+              <div className={cn(
+                "absolute inset-0 opacity-5 transition-opacity duration-500 group-hover:opacity-15", 
+                stat.bg
+              )} />
               
               <div className="relative z-10 flex flex-col h-full">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400/80">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                       {stat.label}
                     </p>
-                    <div className="flex items-baseline gap-2">
+                    <div className="flex items-baseline gap-1.5">
                       <h2 className={cn(
-                        "font-black tracking-tighter text-slate-900 dark:text-white tabular-nums transition-all",
-                        isBig ? "text-5xl" : "text-2xl"
+                        "font-black tracking-tight text-slate-900 dark:text-white tabular-nums",
+                        isBig ? "text-5xl" : "text-3xl"
                       )}>
                         {stat.count}
                       </h2>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">Items</span>
                     </div>
                   </div>
 
                   <div className={cn(
-                    "flex shrink-0 items-center justify-center rounded-2xl transition-transform duration-500 group-hover:rotate-12",
-                    isBig ? "h-14 w-14" : "h-10 w-10",
+                    "flex shrink-0 items-center justify-center rounded-2xl shadow-sm transition-all duration-500 group-hover:scale-110 group-hover:rotate-3",
+                    isBig ? "h-12 w-12" : "h-9 w-9",
                     stat.iconBg,
                     stat.iconColor
                   )}>
-                    <stat.icon className={isBig ? "h-7 w-7" : "h-5 w-5"} strokeWidth={2.5} />
+                    <stat.icon className={isBig ? "h-6 w-6" : "h-4.5 w-4.5"} strokeWidth={2.5} />
                   </div>
                 </div>
 
-                <div className="mt-auto space-y-4">
-                  <div className="flex items-center justify-between">
+                <div className="mt-auto space-y-3">
+                  <div className="flex items-end justify-between gap-4">
                     <p className={cn(
-                        "font-bold tracking-tight text-slate-500 dark:text-slate-400 line-clamp-2",
-                        isBig ? "text-sm max-w-[180px]" : "text-[10px]"
+                        "font-medium leading-tight text-slate-500 dark:text-slate-400 line-clamp-2",
+                        isBig ? "text-sm" : "text-[11px]"
                     )}>
                       {stat.description}
                     </p>
                     <div className={cn(
-                      "text-[10px] font-mono font-black px-2 py-1 rounded-lg border bg-white dark:bg-slate-800",
-                      stat.text
+                      "text-[10px] font-bold px-2 py-0.5 rounded-full border backdrop-blur-sm",
+                      stat.text,
+                      "bg-white/50 dark:bg-slate-800/50"
                     )}>
-                      {percentage > 100 ? "100+" : percentage}%
+                      {percentage}%
                     </div>
                   </div>
                   
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800/50">
                     <motion.div 
                       initial={{ width: 0 }}
                       animate={{ width: `${Math.min(percentage, 100)}%` }}
-                      transition={{ duration: 1.5, ease: "anticipate" }}
+                      transition={{ duration: 1, ease: "circOut" }}
                       className={cn(
-                        "h-full rounded-full",
-                        stat.theme === "rose" && "bg-rose-500",
-                        stat.theme === "amber" && "bg-amber-500",
-                        stat.theme === "blue" && "bg-blue-500",
-                        stat.theme === "indigo" && "bg-indigo-500",
-                        stat.theme === "violet" && "bg-violet-500",
-                        stat.theme === "emerald" && "bg-emerald-500",
-                        stat.theme === "slate" && "bg-slate-500",
-                        stat.theme === "cyan" && "bg-cyan-500"
+                        "h-full rounded-full transition-colors",
+                        {
+                          "bg-amber-500": stat.theme === "amber",
+                          "bg-rose-500": stat.theme === "rose",
+                          "bg-blue-500": stat.theme === "blue",
+                          "bg-indigo-500": stat.theme === "indigo",
+                          "bg-violet-500": stat.theme === "violet",
+                          "bg-emerald-500": stat.theme === "emerald",
+                          "bg-slate-500": stat.theme === "slate",
+                          "bg-cyan-500": stat.theme === "cyan",
+                        }
                       )}
                     />
                   </div>

@@ -11,7 +11,7 @@ import {
   Milestone, 
   Loader2, 
   Forward,
-  ShieldCheck // Added for Next Annual
+  ShieldCheck 
 } from "lucide-react";
 
 import { PageHeader } from "@/components/Expiry/PageHeader";
@@ -24,7 +24,7 @@ interface ExtendedExpiryData extends ExpiryData {
   thirtyDays: any[]; 
   yearly: any[]; 
   nextMonth: any[];
-  nextAnnual: any[]; // Added logic
+  nextAnnual: any[];
 }
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -43,7 +43,7 @@ export const ExpiryReport = () => {
     expired: [],
     thirtyDays: [],
     yearly: [],
-    nextAnnual: [] // Initialized
+    nextAnnual: [] 
   });
   const [loading, setLoading] = useState(false);
 
@@ -63,7 +63,7 @@ export const ExpiryReport = () => {
         expired: result.expired || [],
         thirtyDays: result.thirtyDays || [],
         yearly: result.yearly || [],
-        nextAnnual: result.nextAnnual || [] // Hydrated from API
+        nextAnnual: result.nextAnnual || [] 
       });
     } catch (err) {
       console.error(err);
@@ -85,9 +85,9 @@ export const ExpiryReport = () => {
 
   const tabs = useMemo(() => [
     { key: "today", label: "Today", data: data.today, icon: Clock, color: "text-blue-500", badge: "bg-blue-100 dark:bg-blue-900/30 text-blue-600" },
-    { key: "week", label: "This Week", data: data.week, icon: Calendar, color: "text-purple-500", badge: "bg-purple-100 dark:bg-purple-900/30 text-purple-600" },
-    { key: "month", label: "This Month", data: data.month, icon: AlertCircle, color: "text-orange-500", badge: "bg-orange-100 dark:bg-orange-900/30 text-orange-600" },
-    { key: "nextMonth", label: "Next Month", data: data.nextMonth, icon: Forward, color: "text-indigo-500", badge: "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600" },
+    { key: "week", label: "Week", data: data.week, icon: Calendar, color: "text-purple-500", badge: "bg-purple-100 dark:bg-purple-900/30 text-purple-600" },
+    { key: "month", label: "Month", data: data.month, icon: AlertCircle, color: "text-orange-500", badge: "bg-orange-100 dark:bg-orange-900/30 text-orange-600" },
+    { key: "nextMonth", label: "Next Mo", data: data.nextMonth, icon: Forward, color: "text-indigo-500", badge: "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600" },
     { key: "thirtyDays", label: "30-Day", data: data.thirtyDays, icon: Zap, color: "text-cyan-500", badge: "bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600" },
     { key: "yearly", label: "Annual", data: data.yearly, icon: Milestone, color: "text-emerald-500", badge: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600" },
     { key: "nextAnnual", label: "Future", data: data.nextAnnual, icon: ShieldCheck, color: "text-teal-500", badge: "bg-teal-100 dark:bg-teal-900/40 text-teal-600" },
@@ -95,45 +95,51 @@ export const ExpiryReport = () => {
   ], [data]);
 
   return (
-    <div className="p-4 md:p-8 space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out font-sans">
+    /* Reduced parent padding and vertical gap */
+    <div className="p-2 md:p-4 space-y-3 md:space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500 font-sans max-w-[1600px] mx-auto">
       
-      <div className="relative flex justify-between items-center">
+      {/* Tightened Header */}
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
         <PageHeader 
           companyFilter={companyFilter} 
           onFilterChange={setCompanyFilter} 
         />
         {loading && (
-          <div className="absolute right-0 top-0 md:relative">
-            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          <div className="flex items-center gap-1.5 text-slate-400 text-xs italic">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>Syncing...</span>
           </div>
         )}
       </div>
 
-      <div className="grid gap-6">
+      {/* Reduced gap for Stats */}
+      <div className="grid gap-3 md:gap-4">
         <ExpiryStatsCards data={data} />
       </div>
 
-      <Card className="border-slate-200/60 dark:border-slate-800 shadow-[0_8px_30px_rgb(0,0,0,0.04)] bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm rounded-[24px] md:rounded-[28px] overflow-hidden">
+      {/* Optimized Main Card */}
+      <Card className="border-slate-200/60 dark:border-slate-800 shadow-sm bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm rounded-2xl overflow-hidden border-none md:border">
         <Tabs defaultValue="today" className="w-full">
           
-          <div className="px-4 md:px-6 pt-6 pb-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/20">
-            <div className="overflow-x-auto pb-2 scrollbar-hide">
-              <TabsList className="h-11 md:h-12 flex w-max min-w-full md:w-full bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200/50 dark:border-slate-800">
+          {/* Scrollable Tabs Wrapper - reduced padding */}
+          <div className="w-full bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-800">
+            <div className="overflow-x-auto overflow-y-hidden no-scrollbar py-2 px-2 md:px-4">
+              <TabsList className="inline-flex h-10 items-center justify-start bg-slate-200/50 dark:bg-slate-800/50 p-1 rounded-lg w-max min-w-full lg:w-full lg:flex">
                 {tabs.map(t => (
                   <TabsTrigger 
                     key={t.key} 
                     value={t.key}
                     className={cn(
-                      "flex-1 px-3 md:px-4 gap-1.5 md:gap-2 text-[10px] md:text-[12px] font-bold tracking-tight transition-all duration-300 rounded-lg whitespace-nowrap",
-                      "data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:text-slate-900 dark:data-[state=active]:text-white data-[state=active]:shadow-sm"
+                      "flex items-center justify-center gap-2 px-3 py-1.5 text-[11px] md:text-xs font-bold transition-all duration-200 rounded-md whitespace-nowrap",
+                      "data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:text-slate-950 dark:data-[state=active]:text-white data-[state=active]:shadow-sm",
+                      "flex-shrink-0 flex-grow lg:flex-1"
                     )}
                   >
-                    <t.icon className={cn("w-3.5 h-3.5 shrink-0", t.color)} strokeWidth={2.5} />
-                    <span className="hidden lg:inline">{t.label}</span>
-                    <span className="lg:hidden inline">{t.label.split(' ')[0]}</span>
+                    <t.icon className={cn("w-3 h-3", t.color)} strokeWidth={2.5} />
+                    <span>{t.label}</span>
                     
                     <span className={cn(
-                      "ml-0.5 px-1.5 py-0.5 rounded-md text-[9px] md:text-[10px] font-mono font-bold transition-colors",
+                      "ml-1 px-1 py-0 rounded text-[9px] font-mono font-bold",
                       t.badge
                     )}>
                       {t.data?.length || 0}
@@ -144,15 +150,16 @@ export const ExpiryReport = () => {
             </div>
           </div>
 
-          <div className="p-2">
+          {/* Table Content - removed min-height and reduced internal padding */}
+          <div className="relative">
             {tabs.map(t => (
               <TabsContent 
                 key={t.key} 
                 value={t.key} 
-                className="mt-0 focus-visible:outline-none focus-visible:ring-0 animate-in fade-in zoom-in-[0.98] duration-500"
+                className="mt-0 outline-none animate-in fade-in-50 duration-200"
               >
-                <div className="p-2 md:p-4">
-                   <PolicyTable
+                <div className="p-1 md:p-3">
+                  <PolicyTable
                     data={t.data}
                     showOverdue={t.key === "expired"}
                     followUpEndpoint={FOLLOWUP_ENDPOINT}

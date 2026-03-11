@@ -91,12 +91,17 @@ type Policy = {
 const BASE = import.meta.env.VITE_API_URL;
 const API_URL = `${BASE}/policies`;
 const AUTH_URL = `${BASE}/auth/me`;
-
 /* ---------------- HELPERS ---------------- */
+const parseDMYtoISO = (date: string) => {
+  const [day, month, year] = date.split("-").map(Number);
+  return new Date(year, month - 1, day, 23, 59, 59); // Month is 0-indexed
+};
+
 const daysBetween = (date: string) => {
   const today = new Date();
-  const target = new Date(`${date}T23:59:59`);
-  return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const target = parseDMYtoISO(date);
+  const diff = target.getTime() - today.getTime();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
 };
 
 const getStatusBadge = (status: string) => {

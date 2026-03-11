@@ -123,51 +123,58 @@ export const PolicyTable = ({
     return filteredData.slice(firstPageIndex, lastPageIndex);
   }, [filteredData, currentPage]);
 
-  const generateMessage = (policy: any, language: "rw" | "en") => {
-    if (!policy) return "";
-    const name = policy.owner || "Client";
-    const plate = policy.plate || "";
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const expiry = new Date(policy.expiry_date || policy.expiryDate);
-    expiry.setHours(0, 0, 0, 0);
-    
-    const diffTime = expiry.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+ const generateMessage = (policy: any, language: "rw" | "en") => {
+  if (!policy) return "";
 
-    let statusPhrase = { rw: "", en: "" };
+  const name = policy.owner || "Client";
+  const plate = policy.plate || "";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-    if (diffDays < 0) {
-      statusPhrase = {
-        rw: `ubwishingizi bwa ${plate} bwarangiye hashize iminsi ${Math.abs(diffDays)}`,
-        en: `the insurance for ${plate} expired ${Math.abs(diffDays)} days ago`
-      };
-    } else if (diffDays === 0) {
-      statusPhrase = {
-        rw: `ubwishingizi bwa ${plate} buri burangire uyu munsi`,
-        en: `the insurance for ${plate} is expiring today`
-      };
-    } else if (diffDays > 365) {
-      // Next Annual / Future Logic
-      statusPhrase = {
-        rw: `ubwishingizi bwa ${plate} buracyari buzima, buzashira nyuma y'umwaka (iminsi ${diffDays})`,
-        en: `the insurance for ${plate} is still active and will expire in more than a year (${diffDays} days)`
-      };
-    } else {
-      statusPhrase = {
-        rw: `ubwishingizi bwa ${plate} buzashira mu minsi ${diffDays}`,
-        en: `the insurance for ${plate} will expire in ${diffDays} days`
-      };
-    }
+  // Parse expiry date from your backend (expiry_date or expiryDate)
+  const expiryParts = (policy.expiry_date || policy.expiryDate).split("-");
+  // Expected format from backend: dd-mm-yyyy
+  const expiry = new Date(
+    Number(expiryParts[2]),     // year
+    Number(expiryParts[1]) - 1, // month (0-indexed)
+    Number(expiryParts[0])      // day
+  );
+  expiry.setHours(0, 0, 0, 0);
 
-    const messages = {
-      rw: `Muraho neza ${name},\nTwishimiye kubamenyesha ko ${statusPhrase.rw}.\nNiba mwifuza gukomeza gukorana natwe, mutwoherereze nimero ikoreshwa mu kwishyura, cyangwa mutubaze aho mukeneye ibisobanuro.\nTurabashimiye cyane.`,
-      en: `Hello ${name},\nWe are pleased to inform you that ${statusPhrase.en}.\nIf you would like to continue working with us, please send us the phone number to be used for payment, or ask us if you need any clarification.\nThank you very much.`
+  const diffTime = expiry.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  let statusPhrase = { rw: "", en: "" };
+
+  if (diffDays < 0) {
+    statusPhrase = {
+      rw: `ubwishingizi bwa ${plate} bwarangiye hashize iminsi ${Math.abs(diffDays)}`,
+      en: `the insurance for ${plate} expired ${Math.abs(diffDays)} days ago`,
     };
+  } else if (diffDays === 0) {
+    statusPhrase = {
+      rw: `ubwishingizi bwa ${plate} buri burangire uyu munsi`,
+      en: `the insurance for ${plate} is expiring today`,
+    };
+  } else if (diffDays > 365) {
+    statusPhrase = {
+      rw: `ubwishingizi bwa ${plate} buracyari buzima, buzashira nyuma y'umwaka (iminsi ${diffDays})`,
+      en: `the insurance for ${plate} is still active and will expire in more than a year (${diffDays} days)`,
+    };
+  } else {
+    statusPhrase = {
+      rw: `ubwishingizi bwa ${plate} buzashira mu minsi ${diffDays}`,
+      en: `the insurance for ${plate} will expire in ${diffDays} days`,
+    };
+  }
 
-    return messages[language];
+  const messages = {
+    rw: `Muraho neza ${name},\nTwishimiye kubamenyesha ko ${statusPhrase.rw}.\nNiba mwifuza gukomeza gukorana natwe, mutwoherereze nimero ikoreshwa mu kwishyura, cyangwa mutubaze aho mukeneye ibisobanuro.\nTurabashimiye cyane.`,
+    en: `Hello ${name},\nWe are pleased to inform you that ${statusPhrase.en}.\nIf you would like to continue working with us, please send us the phone number to be used for payment, or ask us if you need any clarification.\nThank you very much.`,
   };
+
+  return messages[language];
+};
 
   const handleOpenMessage = (policy: any) => {
     setMessagePolicy(policy);

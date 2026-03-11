@@ -633,8 +633,8 @@ app.get("/policies", async (req, res) => {
         p.plate,
         p.owner,
         p.company,
-        DATE_FORMAT(p.start_date, '%Y-%m-%d') AS start_date,
-        DATE_FORMAT(p.expiry_date, '%Y-%m-%d') AS expiry_date,
+        DATE_FORMAT(p.start_date, '%d-%m-%Y') AS start_date,
+        DATE_FORMAT(p.expiry_date, '%d-%m-%Y') AS expiry_date,
         p.contact,
 
         CASE
@@ -646,10 +646,10 @@ app.get("/policies", async (req, res) => {
               AND ph.renewed_date IS NOT NULL
           ) THEN 'Renewed'
 
-          -- ❌ EXPIRED
+          -- ❌ EXPIRED (check first!)
           WHEN DATEDIFF(p.expiry_date, CURDATE()) < 0 THEN 'Expired'
 
-          -- ⚠️ EXPIRING SOON
+          -- ⚠️ EXPIRING SOON (next 3 days)
           WHEN DATEDIFF(p.expiry_date, CURDATE()) <= 3 THEN 'Expiring Soon'
 
           -- ✅ ACTIVE
@@ -671,8 +671,8 @@ app.get("/policies/:id", async (req, res) => {
   const rows = await query(`
     SELECT *,
       CASE
-        WHEN DATEDIFF(expiry_date, NOW()) < 0 THEN 'Expired'
-        WHEN DATEDIFF(expiry_date, NOW()) <= 3 THEN 'Expiring Soon'
+        WHEN DATEDIFF(expiry_date, CURDATE()) < 0 THEN 'Expired'
+        WHEN DATEDIFF(expiry_date, CURDATE()) <= 3 THEN 'Expiring Soon'
         ELSE 'Active'
       END AS status
     FROM policies
@@ -737,20 +737,31 @@ app.put("/policies/:id", async (req, res) => {
 app.delete("/policies/:id", isAdmin,async (req,res)=>{ await query("DELETE FROM policies WHERE id=?",[req.params.id]); res.json({ message:"Policy deleted" }); });
 
 // ======================== DASHBOARD / STATS ========================
-app.get("/api/summary", async (req,res)=>{ const stats = await query("SELECT COUNT(*) AS created,SUM(CASE WHEN DATEDIFF(expiry_date,NOW())>3 THEN 1 ELSE 0 END) AS active,SUM(CASE WHEN DATEDIFF(expiry_date,NOW())<=3 AND DATEDIFF(expiry_date,NOW())>=0 THEN 1 ELSE 0 END) AS expiring,SUM(CASE WHEN DATEDIFF(expiry_date,NOW())<0 THEN 1 ELSE 0 END) AS expired FROM policies"); res.json(stats[0]); });
+app.get("/api/summary", async (req,res)=>{
+  const stats = await query(`
+    SELECT 
+      COUNT(*) AS created,
+      SUM(CASE WHEN DATEDIFF(expiry_date, CURDATE()) > 3 THEN 1 ELSE 0 END) AS active,
+      SUM(CASE WHEN DATEDIFF(expiry_date, CURDATE()) <= 3 AND DATEDIFF(expiry_date, CURDATE()) >= 0 THEN 1 ELSE 0 END) AS expiring,
+      SUM(CASE WHEN DATEDIFF(expiry_date, CURDATE()) < 0 THEN 1 ELSE 0 END) AS expired
+    FROM policies
+  `);
+
+  res.json(stats[0]);
+});
 app.get("/api/trends", async (req, res) => {
   const results = await query(`
     SELECT 
       DATE_FORMAT(expiry_date, '%b %Y') AS month,
-      SUM(CASE WHEN DATEDIFF(expiry_date, NOW()) > 0 THEN 1 ELSE 0 END) AS active,
-      SUM(CASE WHEN DATEDIFF(expiry_date, NOW()) <= 0 THEN 1 ELSE 0 END) AS expired,
-      -- If you don't have a 'renewed' column, we can use 0 or a placeholder
-      COUNT(*) AS total 
+      SUM(CASE WHEN DATEDIFF(expiry_date, CURDATE()) > 0 THEN 1 ELSE 0 END) AS active,
+      SUM(CASE WHEN DATEDIFF(expiry_date, CURDATE()) <= 0 THEN 1 ELSE 0 END) AS expired,
+      COUNT(*) AS total
     FROM policies 
     GROUP BY month 
     ORDER BY MIN(expiry_date) DESC 
     LIMIT 12
   `);
+
   res.json({ trends: results });
 });
 app.get("/api/company-distribution", async (req,res)=>{ const results = await query("SELECT company AS name, COUNT(*) AS value FROM policies GROUP BY company"); const colors = ["hsl(var(--primary))","hsl(var(--success))","hsl(var(--warning))","hsl(var(--destructive))"]; const data = results.map((r,i)=>({...r,color:colors[i%colors.length]})); res.json(data); });
@@ -776,8 +787,8 @@ app.get("/api/expiry-report", async (req, res) => {
         p.owner,
         p.company,
         p.contact,
-        DATE_FORMAT(p.start_date, '%Y-%m-%d') AS startDate,
-        DATE_FORMAT(p.expiry_date, '%Y-%m-%d') AS expiryDate,
+        DATE_FORMAT(p.start_date, '%d-%m-%Y') AS startDate,
+        DATE_FORMAT(p.expiry_date, '%d-%m-%Y') AS expiryDate,
         DATEDIFF(p.expiry_date, CURDATE()) AS days_remaining,
         CASE 
           WHEN DATEDIFF(p.expiry_date, CURDATE()) < 0 
@@ -937,21 +948,6 @@ app.put("/policies/:id/renew", async (req, res) => {
   res.json({ message: "Policy renewed successfully" });
 });
 
-app.get("/api/policy-history", async (req, res) => {
-  try {
-    const rows = await query(`
-      SELECT ph.id, ph.policy_id, ph.expiry_date, ph.renewed_date, ph.created_at, ph.updated_at,
-             p.plate, p.owner, p.company
-      FROM policy_history ph
-      JOIN policies p ON p.id = ph.policy_id
-      ORDER BY ph.expiry_date DESC
-    `);
-    res.json(rows);
-  } catch (err) {
-    console.error("Policy history fetch error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
 // ======================== POLICY HISTORY ROUTES ========================
 
 // 1️⃣ Get all policy history (optional date filter)

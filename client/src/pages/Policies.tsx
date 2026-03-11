@@ -411,17 +411,42 @@ const counts = useMemo(() => {
 
   /* ---------------- EXPORT ---------------- */
   const exportToCSV = () => {
-    const headers = ["Plate","Owner","Company","Start Date","Expiry Date","Days Remaining","Status","Contact"];
-    const rows = filteredPolicies.map(p => [p.plate,p.owner,p.company,p.start_date,p.expiry_date,p.days_remaining,p.status,p.contact]);
-    const csv = [headers,...rows].map(r => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `policies_export_${format(new Date(),'yyyy-MM-dd')}.csv`;
-    a.click();
-  };
+  const headers = [
+    "plate",
+    "owner",
+    "company",
+    "start_date",
+    "expiry_date",
+    "status",
+    "days_remaining",
+    "contact"
+  ];
 
+  const rows = filteredPolicies.map(p => [
+    p.plate,
+    p.owner,
+    p.company,
+    p.start_date,
+    p.expiry_date,
+    p.status,
+    p.days_remaining,
+    p.contact
+  ]);
+
+  const csv = [headers, ...rows]
+    .map(r => r.join(","))
+    .join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `policies_export_${format(new Date(), "yyyy-MM-dd")}.csv`;
+  a.click();
+
+  URL.revokeObjectURL(url);
+};
   /* ---------------- IMPORT HANDLER ---------------- */
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];

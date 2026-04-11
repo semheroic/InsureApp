@@ -56,17 +56,14 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // ======================== DATABASE ========================
 
-// ======================== DATABASE ========================
-// ======================== DATABASE ========================
-// ======================== DATABASE ========================
 console.log("ENV:", process.env.NODE_ENV);
 console.log("MYSQLHOST exists:", !!process.env.MYSQLHOST);
 const isProduction = process.env.NODE_ENV === "production"; // Force local mode for development/testing
 const db = mysql.createPool({
-  host: isProduction ? process.env.MYSQLHOST : process.env.DB_HOST,
+  host: isProduction ? process.env.MYSQLHOST : process.env.DB_HOST ,
   user:  isProduction ? process.env.MYSQLUSER : process.env.DB_USER,
-  password: isProduction ? process.env.MYSQLPASSWORD : process.env.DB_PASS,
-  database: isProduction ? process.env.MYSQLDATABASE : process.env.DB_NAME,
+  password: isProduction ? process.env.MYSQLPASSWORD : process.env.DB_PASS ,
+  database: isProduction ? process.env.MYSQLDATABASE : process.env.DB_NAME ,
   port: isProduction ? process.env.MYSQLPORT : process.env.DB_PORT || 3306,
 
   waitForConnections: true,
@@ -730,6 +727,58 @@ app.put("/policies/:id", async (req, res) => {
   }
 
   res.json({ message: "Policy updated successfully" });
+});
+// ======================== DELETE ALL POLICIES (Admin Only) ========================
+app.delete("/policies/all", isAdmin, async (req, res) => {
+  try {
+    const { password } = req.body;
+
+    // 1. Password is required
+    if (!password) {
+      return res.status(400).json({ error: "Password is required to confirm this action." });
+    }
+
+    // 2. Fetch the admin's record from DB
+    const admins = await query("SELECT * FROM users WHERE id = ?", [req.session.userId]);
+    if (!admins.length) {
+      return res.status(404).json({ error: "Admin user not found." });
+    }
+
+    const admin = admins[0];
+
+    // 3. Verify the password FIRST before doing anything else
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: "Incorrect password. Action cancelled." });
+    }
+
+    // 4. Check if there are any policies to delete
+    const [{ total }] = await query("SELECT COUNT(*) AS total FROM policies");
+    if (total === 0) {
+      return res.status(404).json({ error: "No policies found. Nothing to delete." });
+    }
+
+    // 5. Delete dependent records first (foreign key constraints)
+    await query("DELETE FROM followups");
+    await query("DELETE FROM policy_history");
+    await query("DELETE FROM policies");
+
+    // 6. Reset auto increment
+    await query("ALTER TABLE policies AUTO_INCREMENT = 1");
+    await query("ALTER TABLE policy_history AUTO_INCREMENT = 1");
+    await query("ALTER TABLE followups AUTO_INCREMENT = 1");
+
+    console.log(`🗑️  ${total} policies deleted by Admin: ${admin.email} at ${new Date().toISOString()}`);
+
+    res.json({ 
+      message: `All policies have been permanently deleted.`,
+      deleted: total
+    });
+
+  } catch (err) {
+    console.error("Delete all policies error:", err);
+    res.status(500).json({ error: "Failed to delete policies: " + err.message });
+  }
 });
 
 // PUT: Renew policy and log history

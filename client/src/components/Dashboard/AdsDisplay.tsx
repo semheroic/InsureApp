@@ -30,7 +30,7 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
   const fetchAds = async () => {
     setLoading(true);
     try {
-      const res = await axios.get<Ad[]>(`${BASE}/api/ads`);
+      const res = await axios.get<Ad[]>(`${BASE}/api/ads`, { withCredentials: true });
       let filtered = res.data || [];
       if (!showInactive) filtered = filtered.filter(ad => ad.is_active);
       if (max) filtered = filtered.slice(0, max);

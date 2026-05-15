@@ -19,6 +19,7 @@ import { EditProfile } from "./components/Layout/EditProfile";
 import PolicyHistoryTracker from "./pages/PolicyHistory";
 import NetworkStatus from "./hooks/NetworkStatus";
 import { AdManager } from "./pages/AdManager";
+import  AdminActivityDashboard  from "./pages/AdminActivityDashboard";
 
 const queryClient = new QueryClient();
 
@@ -48,6 +49,7 @@ const App = () => (
           <Route path="/ad-manager" element={<MainLayout><AdManager /></MainLayout>} />
           {/* Protected/Main Routes wrapped in MainLayout */}
           <Route path="/dashboard" element={<MainLayout><Dashboard /></MainLayout>} />
+          <Route path="/admin/activity" element={<MainLayout><AdminActivityDashboard /></MainLayout>} />
           <Route path="/policies" element={<MainLayout><Policies /></MainLayout>} />
           <Route path="/users" element={<MainLayout><Users /></MainLayout>} />
           <Route path="/users/edit/:id" element={<EditProfile/>} />

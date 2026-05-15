@@ -29,9 +29,9 @@ const AnalyticsReport = () => {
       try {
         setLoading(true);
         const [trendsRes, summaryRes, companyRes] = await Promise.all([
-          axios.get(`${API_URL}/api/trends`),
-          axios.get(`${API_URL}/api/summary`),
-          axios.get(`${API_URL}/api/company-distribution`)
+          axios.get(`${API_URL}/api/trends`, { withCredentials: true }),
+          axios.get(`${API_URL}/api/summary`, { withCredentials: true }),
+          axios.get(`${API_URL}/api/company-distribution`, { withCredentials: true })
         ]);
         setMonthlyData((trendsRes.data.trends || []).reverse());
         setSummary(summaryRes.data);

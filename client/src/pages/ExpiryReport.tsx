@@ -47,10 +47,67 @@ export const ExpiryReport = () => {
   });
   const [loading, setLoading] = useState(false);
 
+  const exportReport = useCallback(() => {
+    const sections = [
+      { label: "Today", rows: data.today },
+      { label: "Week", rows: data.week },
+      { label: "Month", rows: data.month },
+      { label: "Next Month", rows: data.nextMonth },
+      { label: "30 Days", rows: data.thirtyDays },
+      { label: "Annual", rows: data.yearly },
+      { label: "Future", rows: data.nextAnnual },
+      { label: "Expired", rows: data.expired },
+    ];
+
+    const rows = sections.flatMap((section) =>
+      section.rows.map((policy: any) => [
+        section.label,
+        policy.policy_number || "",
+        policy.plate || "",
+        policy.owner || "",
+        policy.company || "",
+        policy.startDate || "",
+        policy.expiryDate || "",
+        policy.contact || "",
+        policy.days_remaining ?? "",
+        policy.followup_status || "",
+      ])
+    );
+
+    if (!rows.length) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    const headers = [
+      "Bucket",
+      "Policy Number",
+      "Plate",
+      "Owner",
+      "Company",
+      "Start Date",
+      "Expiry Date",
+      "Contact",
+      "Days Remaining",
+      "Follow-Up Status",
+    ];
+
+    const csvContent = [headers.join(","), ...rows.map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `expiry-report-${companyFilter}-${new Date().toISOString().split("T")[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [companyFilter, data, toast]);
+
   const fetchPolicies = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_REPORT}?company=${companyFilter}`);
+      const res = await fetch(`${API_REPORT}?company=${companyFilter}`, {
+        credentials: "include",
+      });
       if (!res.ok) throw new Error("Failed to fetch expiry report");
       
       const result: ExtendedExpiryData = await res.json();
@@ -103,6 +160,7 @@ export const ExpiryReport = () => {
         <PageHeader 
           companyFilter={companyFilter} 
           onFilterChange={setCompanyFilter} 
+          onExport={exportReport}
         />
         {loading && (
           <div className="flex items-center gap-1.5 text-slate-400 text-xs italic">

@@ -47,7 +47,7 @@ export const AdManager: React.FC = () => {
   const fetchAds = async () => {
     setIsLoading(true);
     try {
-      const res = await axios.get<Ad[]>(`${BASE}/api/ads`);
+      const res = await axios.get<Ad[]>(`${BASE}/api/ads`, { withCredentials: true });
       setAds(res.data || []);
     } catch (err) {
       console.error("Failed to fetch ads", err);
@@ -80,6 +80,7 @@ export const AdManager: React.FC = () => {
 
     try {
       await axios.post(`${BASE}/api/ads`, data, {
+        withCredentials: true,
         headers: { "Content-Type": "multipart/form-data" }
       });
       setIsAdding(false);
@@ -99,7 +100,7 @@ export const AdManager: React.FC = () => {
 
   const toggleStatus = async (ad: Ad) => {
     try {
-      await axios.patch(`${BASE}/api/ads/${ad.id}/status`, { is_active: !ad.is_active });
+      await axios.patch(`${BASE}/api/ads/${ad.id}/status`, { is_active: !ad.is_active }, { withCredentials: true });
       fetchAds();
     } catch (err) { console.error("Status update failed", err); }
   };
@@ -107,7 +108,7 @@ export const AdManager: React.FC = () => {
   const handleDelete = async (ad: Ad) => {
     if (!window.confirm("Permanently delete this advertisement?")) return;
     try {
-      await axios.delete(`${BASE}/api/ads/${ad.id}`);
+      await axios.delete(`${BASE}/api/ads/${ad.id}`, { withCredentials: true });
       fetchAds();
     } catch (err) { console.error(err); alert("Delete failed"); }
   };

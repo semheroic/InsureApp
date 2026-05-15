@@ -6,6 +6,7 @@ import { TrendChart } from "@/components/Dashboard/TrendChart";
 import { SummaryCard } from "@/components/Dashboard/SummaryCard";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useActivityScope } from "@/contexts/ActivityScopeContext";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 const API_URL = import.meta.env.VITE_API_URL;
@@ -33,6 +34,7 @@ const itemVars = {
 
 const Dashboard = () => {
   const { toast } = useToast();
+  const { activityScope } = useActivityScope();
   const [summary, setSummary] = useState<SummaryData>({
     created: 0,
     active: 0,
@@ -50,17 +52,18 @@ const Dashboard = () => {
         setLoading(true);
         setError("");
 
-        const cachedSummary = localStorage.getItem("summary");
-        const cachedTrends = localStorage.getItem("trends");
-        if (cachedSummary) setSummary(JSON.parse(cachedSummary));
-        if (cachedTrends) setTrends(JSON.parse(cachedTrends));
-
         const [summaryRes, trendsRes] = await Promise.all([
           axios.get(`${API_URL}/api/summary`, { withCredentials: true }),
           axios.get(`${API_URL}/api/trends`, { withCredentials: true }),
         ]);
 
-        setSummary(summaryRes.data);
+        setSummary(summaryRes.data || {
+          created: 0,
+          active: 0,
+          expiring: 0,
+          expired: 0,
+          renewed: 0,
+        });
         setTrends(trendsRes.data.trends || []);
 
         localStorage.setItem("summary", JSON.stringify(summaryRes.data));
@@ -68,13 +71,18 @@ const Dashboard = () => {
       } catch (err) {
         console.error(err);
         setError("Failed to load dashboard data.");
+        // Try to load from cache if API fails
+        const cachedSummary = localStorage.getItem("summary");
+        const cachedTrends = localStorage.getItem("trends");
+        if (cachedSummary) setSummary(JSON.parse(cachedSummary));
+        if (cachedTrends) setTrends(JSON.parse(cachedTrends));
       } finally {
-        setTimeout(() => setLoading(false), 500); // Smooth transition out of loading
+        setTimeout(() => setLoading(false), 500);
       }
     };
 
     fetchDashboardData();
-  }, []);
+  }, [activityScope]);
 
   const exportToCSV = () => {
     try {
@@ -174,18 +182,21 @@ const Dashboard = () => {
       {/* Stat Cards - Staggered Entry */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { title: "Created", subtitle: "Total Registered", val: summary.created, icon: CheckCircle2, bg: "bg-blue-500" },
-          { title: "Active", subtitle: "Currently Valid", val: summary.active, icon: Shield, bg: "bg-emerald-500" },
-          { title: "Expiring", subtitle: "Upcoming Review", val: summary.expiring, icon: Clock, bg: "bg-amber-500" },
-          { title: "Expired", subtitle: "Lapsed Coverage", val: summary.expired, icon: AlertCircle, bg: "bg-rose-500" },
+          { title: "Created", subtitle: "Total Registered", field: "created", icon: CheckCircle2, bg: "bg-blue-500" },
+          { title: "Active", subtitle: "Currently Valid", field: "active", icon: Shield, bg: "bg-emerald-500" },
+          { title: "Expiring", subtitle: "Upcoming Review", field: "expiring", icon: Clock, bg: "bg-amber-500" },
+          { title: "Expired", subtitle: "Lapsed Coverage", field: "expired", icon: AlertCircle, bg: "bg-rose-500" },
         ].map((card, idx) => (
           <motion.div key={idx} variants={itemVars} whileHover={{ y: -5 }}>
              <StatCard
                 title={card.title}
                 subtitle={card.subtitle}
-                value={card.val}
+                apiPath={`${API_URL}/api/summary`}
+                field={card.field}
+                value={summary[card.field as keyof SummaryData] || 0}
                 icon={card.icon}
                 iconBgColor={`${card.bg}/10`}
+                pollInterval={30000}
                 className="rounded-[28px] border-none shadow-[0_8px_30px_rgb(0,0,0,0.02)] ring-1 ring-slate-200/60 dark:ring-slate-800 bg-white dark:bg-slate-900 p-6"
              />
           </motion.div>

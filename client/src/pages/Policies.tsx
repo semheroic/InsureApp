@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react"
 import {  DialogClose } from "@/components/ui/dialog"
+import { useActivityScope } from "@/contexts/ActivityScopeContext";
 import {
   Select,
   SelectContent,
@@ -76,8 +77,17 @@ import { DateRange } from "react-day-picker";
 
 axios.defaults.withCredentials = true;
 
+type User = {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  profile_picture?: string;
+};
+
 type Policy = {
   id: number;
+  policy_number: string;
   plate: string;
   owner: string;
   company: string;
@@ -86,6 +96,7 @@ type Policy = {
   contact: string;
   status: "Active" | "Expiring Soon" | "Expired" | "Renewed";
   days_remaining: number;
+  created_by?: number | null;
 };
 
 const BASE = import.meta.env.VITE_API_URL;
@@ -141,6 +152,26 @@ const normalizeContact = (value: string | undefined) => {
   if (digits.length > 10) digits = "0" + digits.slice(-9);
   return digits;
 };
+/* ---------------- HELPERS ---------------- */
+const splitCSVLine = (line: string): string[] => {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      result.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+};
 
 /* ---------------- CSV IMPORT ---------------- */
 const importCSV = async (file: File) => {
@@ -148,27 +179,58 @@ const importCSV = async (file: File) => {
   const lines = text.split(/\r?\n/).filter(Boolean);
   if (!lines.length) return { policies: [], errors: ["Empty CSV"] };
 
-  const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
-  const expected = ["plate", "owner", "company", "start_date", "expiry_date", "contact"];
-  const missingHeaders = expected.filter(h => !headers.includes(h));
+  const headers = splitCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+
+  // plate is excluded — it is optional
+  const required = ["policy_number", "owner", "company", "start_date", "expiry_date", "contact"];
+
+  const missingHeaders = required.filter(h => !headers.includes(h));
   if (missingHeaders.length) return { policies: [], errors: [`Missing headers: ${missingHeaders.join(", ")}`] };
 
   const policies: any[] = [];
   const errors: string[] = [];
 
   lines.slice(1).forEach((line, idx) => {
+    const rowNum = idx + 2;
+    const values = splitCSVLine(line);
     const row: Record<string, string> = {};
-    line.split(",").forEach((v, i) => row[headers[i]] = v?.trim());
+    headers.forEach((h, i) => (row[h] = values[i]?.trim() ?? ""));
+
+    const rowErrors: string[] = [];
+
+    // Only validate required fields — plate intentionally excluded
+    const missingFields = required.filter(k => !row[k] || row[k].trim() === "");
+    if (missingFields.length) rowErrors.push(`missing: ${missingFields.join(", ")}`);
+
     const start_date = parseDateToISO(row.start_date);
     const expiry_date = parseDateToISO(row.expiry_date);
+    if (!start_date) rowErrors.push("invalid start_date format");
+    if (!expiry_date) rowErrors.push("invalid expiry_date format");
+
     const contact = normalizeContact(row.contact);
+    if (!validateRWPhone(contact)) rowErrors.push("invalid contact number (use 07xxxxxxxx or +2507xxxxxxxx)");
 
-    const missing = expected.filter(k => !row[k] || row[k].trim() === "");
-    if (!start_date) missing.push("start_date");
-    if (!expiry_date) missing.push("expiry_date");
+    if (rowErrors.length) {
+      errors.push(`Row ${rowNum}: ${rowErrors.join(" | ")}`);
+      return;
+    }
 
-    if (missing.length) errors.push(`Row ${idx + 2}: missing ${missing.join(", ")}`);
-    else policies.push({ ...row, start_date, expiry_date, contact, status: "Active", days_remaining: daysBetween(expiry_date) });
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const days_remaining = Math.ceil(
+      (new Date(expiry_date!).getTime() - Date.now()) / msPerDay
+    );
+
+    policies.push({
+      policy_number: row.policy_number?.trim(),
+      plate: row.plate?.trim() ?? "",        // empty string if blank or missing
+      owner: row.owner?.trim(),
+      company: row.company?.trim().toUpperCase(),
+      start_date: start_date!,
+      expiry_date: expiry_date!,
+      contact,
+      status: "Active",
+      days_remaining,
+    });
   });
 
   return { policies, errors };
@@ -177,22 +239,34 @@ const importCSV = async (file: File) => {
 /* ---------------- MAIN COMPONENT ---------------- */
 const Policies = () => {
   const { toast } = useToast();
+  const { activityScope, isAdmin: contextIsAdmin } = useActivityScope();
+  const emptyFormData = {
+    policyNumber: "",
+    plate: "",
+    owner: "",
+    company: "SORAS",
+    startDate: "",
+    expiryDate: "",
+    contact: "",
+  };
 
   /* ---------------- STATES ---------------- */
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [companyFilter, setCompanyFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
+  const [userFilter, setUserFilter] = useState("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>({ from: undefined, to: undefined });
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
   const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
-  const [formData, setFormData] = useState({ plate: "", owner: "", company: "SORAS", startDate: "", expiryDate: "", contact: "" });
+  const [formData, setFormData] = useState(emptyFormData);
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -201,9 +275,10 @@ const Policies = () => {
   const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
   const [bulkMessage, setBulkMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const getPolicyReference = (policy: Pick<Policy, "policy_number" | "plate">) => policy.policy_number || policy.plate || "N/A";
 
   const roleClean = userRole?.toLowerCase();
-  const isAdmin = roleClean === "admin";
+  const isAdmin = contextIsAdmin;
   const isManager = roleClean === "manager";
   const canModify = isAdmin || isManager;
   
@@ -222,6 +297,16 @@ const [originalDates, setOriginalDates] = useState<{
       setUserRole(authRes.data.role);
       const { data } = await axios.get(API_URL);
       setPolicies(data.map((p: any) => ({ ...p, days_remaining: daysBetween(p.expiry_date) })));
+      
+      // Fetch users if admin viewing all users
+    if (contextIsAdmin) {
+  try {
+    const usersRes = await axios.get(`${BASE}/users`);
+    setUsers(usersRes.data || []);
+  } catch (err) {
+    console.error("Failed to fetch users:", err);
+  }
+}
     } catch (err: any) {
       toast({ title: "Error", description: err.response?.status === 401 ? "Please login again" : "Failed to load data", variant: "destructive" });
     } finally {
@@ -229,7 +314,9 @@ const [originalDates, setOriginalDates] = useState<{
     }
   };
 
-  useEffect(() => { checkAuthAndFetch(); }, []);
+  useEffect(() => { 
+    checkAuthAndFetch(); 
+  }, [activityScope]);
 
   /* ---------------- FILTERS & PAGINATION ---------------- */
   const filteredPolicies = useMemo(() => {
@@ -237,9 +324,10 @@ const [originalDates, setOriginalDates] = useState<{
       const pDate = parseISO(p.start_date);
       const today = new Date();
       const searchLower = searchQuery.toLowerCase().trim();
-      let matchesSearch = !searchQuery || [p.plate, p.owner, p.company].some(v => v.toLowerCase().includes(searchLower));
+      let matchesSearch = !searchQuery || [p.policy_number, p.plate, p.owner, p.company].some(v => v.toLowerCase().includes(searchLower));
       let matchesStatus = statusFilter === "all" || p.status.toLowerCase().replace(/\s+/g, "") === statusFilter;
       let matchesCompany = companyFilter === "all" || p.company.toLowerCase() === companyFilter;
+      let matchesUser = userFilter === "all" || p.created_by === Number(userFilter);
       let matchesQuickDate = true;
       if (dateFilter === "today") matchesQuickDate = isSameDay(pDate, today);
       else if (dateFilter === "weekly") matchesQuickDate = isWithinInterval(pDate, { start: startOfWeek(today), end: endOfWeek(today) });
@@ -248,9 +336,9 @@ const [originalDates, setOriginalDates] = useState<{
       let matchesRange = true;
       if (dateRange?.from && dateRange?.to) matchesRange = isWithinInterval(pDate, { start: startOfDay(dateRange.from), end: endOfDay(dateRange.to) });
 
-      return matchesSearch && matchesStatus && matchesCompany && matchesQuickDate && matchesRange;
+      return matchesSearch && matchesStatus && matchesCompany && matchesUser && matchesQuickDate && matchesRange;
     });
-  }, [policies, searchQuery, statusFilter, companyFilter, dateFilter, dateRange]);
+  }, [policies, searchQuery, statusFilter, companyFilter, userFilter, dateFilter, dateRange]);
 
   const paginatedPolicies = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
@@ -317,11 +405,30 @@ const counts = useMemo(() => {
   };
 }, [policies]);
 
+// Calculate record counts by user
+const userRecordCounts = useMemo(() => {
+  const counts: Record<number, number> = {};
+  policies.forEach(p => {
+    if (p.created_by) {
+      counts[p.created_by] = (counts[p.created_by] || 0) + 1;
+    }
+  });
+  return counts;
+}, [policies]);
+
+// Helper to get user name from ID
+const getUserName = (userId?: number | null) => {
+  if (!userId) return "Unknown";
+  const user = users.find(u => u.id === userId);
+  return user ? user.name : "Unknown";
+};
+
   /* ---------------- CRUD HANDLERS ---------------- */
   const handleAdd = async () => {
     if (!validateRWPhone(formData.contact)) return toast({ title: "Invalid Phone", description: "Use Rwandan format (078...)", variant: "destructive" });
     try {
       await axios.post(API_URL, {
+        policy_number: formData.policyNumber,
         plate: formData.plate,
         owner: formData.owner,
         company: formData.company,
@@ -332,7 +439,7 @@ const counts = useMemo(() => {
       checkAuthAndFetch();
       setIsAddDialogOpen(false);
       toast({ title: "Added", description: "Policy created" });
-      setFormData({ plate: "", owner: "", company: "SORAS", startDate: "", expiryDate: "", contact: "" });
+      setFormData({ policyNumber: "", plate: "", owner: "", company: "SORAS", startDate: "", expiryDate: "", contact: "" });
     } catch (err) {
       toast({ title: "Error", description: "Failed to add policy", variant: "destructive" });
     }
@@ -358,6 +465,7 @@ const counts = useMemo(() => {
     } else {
       // ✏️ EDIT ROUTE
       await axios.put(`${API_URL}/${selectedPolicy.id}`, {
+        policy_number: formData.policyNumber,
         plate: formData.plate,
         owner: formData.owner,
         company: formData.company,
@@ -380,6 +488,83 @@ const counts = useMemo(() => {
 };
 
 
+  const handleAddPolicy = async () => {
+    if (!formData.policyNumber.trim() || !formData.owner.trim() || !formData.startDate || !formData.expiryDate) {
+      return toast({
+        title: "Missing Fields",
+        description: "Policy number, plate, owner, and dates are required.",
+        variant: "destructive",
+      });
+    }
+    if (!validateRWPhone(formData.contact)) return toast({ title: "Invalid Phone", description: "Use Rwandan format (078...)", variant: "destructive" });
+
+    try {
+      await axios.post(API_URL, {
+        policy_number: formData.policyNumber,
+        plate: formData.plate,
+        owner: formData.owner,
+        company: formData.company,
+        start_date: formData.startDate,
+        expiry_date: formData.expiryDate,
+        contact: formData.contact,
+      });
+      checkAuthAndFetch();
+      setIsAddDialogOpen(false);
+      setFormData(emptyFormData);
+      toast({ title: "Added", description: "Policy created" });
+    } catch {
+      toast({ title: "Error", description: "Failed to add policy", variant: "destructive" });
+    }
+  };
+
+  const handleEditPolicy = async () => {
+    if (!selectedPolicy || !originalDates) return;
+
+    const datesChanged =
+      formData.startDate !== originalDates.start_date ||
+      formData.expiryDate !== originalDates.expiry_date;
+    const detailsChanged =
+      formData.policyNumber !== selectedPolicy.policy_number ||
+      formData.plate !== selectedPolicy.plate ||
+      formData.owner !== selectedPolicy.owner ||
+      formData.company !== selectedPolicy.company ||
+      formData.contact !== selectedPolicy.contact;
+
+    try {
+      if (detailsChanged) {
+        await axios.put(`${API_URL}/${selectedPolicy.id}`, {
+          policy_number: formData.policyNumber,
+          plate: formData.plate,
+          owner: formData.owner,
+          company: formData.company,
+          contact: formData.contact,
+        });
+      }
+
+      if (datesChanged) {
+        await axios.put(`${API_URL}/${selectedPolicy.id}/renew`, {
+          start_date: formData.startDate,
+          expiry_date: formData.expiryDate,
+          contact: formData.contact,
+        });
+      }
+
+      checkAuthAndFetch();
+      setIsEditDialogOpen(false);
+      setOriginalDates(null);
+      toast({
+        title: datesChanged ? "Updated and Renewed" : "Updated",
+        description: datesChanged ? "Policy details and dates saved successfully" : "Policy updated successfully",
+      });
+    } catch {
+      toast({
+        title: "Error",
+        description: "Update failed",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleDelete = async () => {
     if (!selectedPolicy) return;
     try {
@@ -398,7 +583,13 @@ const counts = useMemo(() => {
     try {
       const payload = {
         template: bulkMessage,
-        recipients: filteredPolicies.map(p => ({ contact: p.contact, owner: p.owner, plate: p.plate, days: p.days_remaining }))
+        recipients: filteredPolicies.map(p => ({
+          contact: p.contact,
+          owner: p.owner,
+          policy_number: p.policy_number,
+          plate: p.plate,
+          days: p.days_remaining
+        }))
       };
       await axios.post(`${BASE}/policies/broadcast`, payload);
       toast({ title: "Broadcast Complete", description: `Sent messages.` });
@@ -412,6 +603,7 @@ const counts = useMemo(() => {
   /* ---------------- EXPORT ---------------- */
   const exportToCSV = () => {
   const headers = [
+    "policy_number",
     "plate",
     "owner",
     "company",
@@ -423,6 +615,7 @@ const counts = useMemo(() => {
   ];
 
   const rows = filteredPolicies.map(p => [
+    p.policy_number,
     p.plate,
     p.owner,
     p.company,
@@ -538,7 +731,7 @@ const counts = useMemo(() => {
     size="sm"
     className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1 w-full sm:w-auto"
     onClick={() => {
-      const headers = ["plate","owner","company","start_date","expiry_date","contact"];
+      const headers = ["policy_number","plate","owner","company","start_date","expiry_date","contact"];
       const csv = [headers].map(r => r.join(",")).join("\n");
       const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
@@ -578,7 +771,7 @@ const counts = useMemo(() => {
           <div className="relative sm:col-span-2 xl:col-span-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search plate or owner..."
+              placeholder="Search policy number, plate, or owner..."
               className="pl-10"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -654,7 +847,6 @@ const counts = useMemo(() => {
               <SelectItem value="radiant">RADIANT ({counts.radiant})</SelectItem>
             </SelectContent>
           </Select>
-
           <Button variant="outline" size="icon" className="w-full sm:w-10" title="Reset Filters" onClick={() => {
               setSearchQuery("");
               setStatusFilter("all");
@@ -665,12 +857,108 @@ const counts = useMemo(() => {
             <Trash2 className="w-4 h-4" />
           </Button>
         </div>
+        {/* ─── ADMIN: Filter by Agent ─── */}
+{isAdmin && users.length > 0 && (
+  <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <User className="w-4 h-4 text-muted-foreground" />
+        <span className="text-sm font-semibold text-foreground">Filter by Agent</span>
+        {userFilter !== "all" && (
+          <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-xs">
+            {users.find(u => String(u.id) === userFilter)?.name}
+          </Badge>
+        )}
+      </div>
+      {userFilter !== "all" && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-xs h-7 px-2 text-muted-foreground"
+          onClick={() => setUserFilter("all")}
+        >
+          <X className="w-3 h-3 mr-1" /> Clear
+        </Button>
+      )}
+    </div>
+
+    <div className="flex flex-wrap gap-2">
+      {/* "All" chip */}
+      <button
+        onClick={() => setUserFilter("all")}
+        className={cn(
+          "flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm font-medium transition-all",
+          userFilter === "all"
+            ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+            : "bg-background text-muted-foreground border-border hover:border-slate-400 hover:text-foreground"
+        )}
+      >
+        <span>All Agents</span>
+        <span className={cn(
+          "text-xs px-1.5 py-0.5 rounded-full font-bold",
+          userFilter === "all" ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+        )}>
+          {policies.length}
+        </span>
+      </button>
+
+      {/* One chip per user */}
+      {users.map((user) => {
+        const count = userRecordCounts[user.id] || 0;
+        const isSelected = userFilter === String(user.id);
+        const initials = user.name
+          .split(" ")
+          .map((n) => n[0])
+          .slice(0, 2)
+          .join("")
+          .toUpperCase();
+
+        return (
+          <button
+            key={user.id}
+            onClick={() => setUserFilter(String(user.id))}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm font-medium transition-all",
+              isSelected
+                ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                : "bg-background text-muted-foreground border-border hover:border-blue-300 hover:text-foreground"
+            )}
+          >
+            {/* Avatar: photo or initials */}
+            {user.profile_picture ? (
+              <img
+                src={`${BASE}${user.profile_picture}`}
+                alt={user.name}
+                className="w-5 h-5 rounded-full object-cover"
+              />
+            ) : (
+              <span className={cn(
+                "w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center",
+                isSelected ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+              )}>
+                {initials}
+              </span>
+            )}
+            <span>{user.name}</span>
+            <span className={cn(
+              "text-xs px-1.5 py-0.5 rounded-full font-bold",
+              isSelected ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+            )}>
+              {count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  </div>
+)}
 
         <div className="relative rounded-lg border border-border overflow-x-auto">
           <div className="min-w-[760px] sm:min-w-[900px]">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Policy Number</TableHead>
                 <TableHead>Plate</TableHead>
                 <TableHead>Owner</TableHead>
                 <TableHead>Company</TableHead>
@@ -678,16 +966,18 @@ const counts = useMemo(() => {
                 <TableHead>Expiry Date</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Days Remaining</TableHead>
+                {activityScope === "all" && isAdmin && <TableHead>Created By</TableHead>}
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedPolicies.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No records found matching filters</TableCell>
+                  <TableCell colSpan={activityScope === "all" && isAdmin ? 10 : 9} className="text-center py-8 text-muted-foreground">No records found matching filters</TableCell>
                 </TableRow>
               ) : paginatedPolicies.map((policy) => (
                 <TableRow key={policy.id}>
+                  <TableCell className="font-medium">{policy.policy_number}</TableCell>
                   <TableCell className="font-medium">{policy.plate}</TableCell>
                   <TableCell>{policy.owner}</TableCell>
                   <TableCell>{policy.company}</TableCell>
@@ -697,6 +987,7 @@ const counts = useMemo(() => {
                     <Badge className={getStatusBadge(policy.status)}>{policy.status}</Badge>
                   </TableCell>
                   <TableCell>{policy.days_remaining > 0 ? `${policy.days_remaining} day${policy.days_remaining > 1 ? "s" : ""}` : "Expired"}</TableCell>
+                  {activityScope === "all" && isAdmin && <TableCell className="font-medium text-sm">{getUserName(policy.created_by)}</TableCell>}
                   <TableCell className="text-right flex gap-2 justify-end">
                     <Button variant="ghost" size="icon" onClick={() => { setSelectedPolicy(policy); setIsViewDialogOpen(true); }}>
                       <Eye className="w-4 h-4" />
@@ -710,6 +1001,7 @@ const counts = useMemo(() => {
                             setSelectedPolicy(policy);
 
     setFormData({
+      policyNumber: policy.policy_number,
       plate: policy.plate,
       owner: policy.owner,
       company: policy.company,
@@ -797,6 +1089,10 @@ const counts = useMemo(() => {
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
+                  <Label className="text-muted-foreground text-xs uppercase">Policy Number</Label>
+                  <p className="font-bold text-lg">{selectedPolicy.policy_number}</p>
+                </div>
+                <div>
                   <Label className="text-muted-foreground text-xs uppercase">Plate Number</Label>
                   <p className="font-bold text-lg">{selectedPolicy.plate}</p>
                 </div>
@@ -876,7 +1172,19 @@ const counts = useMemo(() => {
         </h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label htmlFor="plate" className="text-xs font-semibold text-slate-700">Plate Number</Label>
+            <Label htmlFor="policy-number" className="text-xs font-semibold text-slate-700">Policy Number</Label>
+            <Input
+              id="policy-number"
+              placeholder="POL-0001"
+              value={formData.policyNumber}
+              onChange={(e) => setFormData({ ...formData, policyNumber: e.target.value })}
+              className="bg-slate-50/50 border-slate-200 focus:ring-blue-500 uppercase"
+            />
+          </div>
+          <div className="space-y-1.5">
+           <Label htmlFor="plate" className="text-xs font-semibold text-slate-700">
+  Plate Number <span className="text-red-400 font-normal">(optional)</span>
+</Label>
             <div className="relative">
               <Input 
                 id="plate" 
@@ -942,30 +1250,30 @@ const counts = useMemo(() => {
         </div>
 
         {/* SECTION 3: Timeline */}
-        <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label className="text-[10px] font-bold text-blue-700 uppercase">Effective Date</Label>
-            <div className="relative">
-              <Input 
-                type="date" 
-                value={formData.startDate} 
-                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} 
-                className="bg-white border-blue-200 h-9 text-sm"
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-[10px] font-bold text-blue-700 uppercase">Expiration Date</Label>
-            <div className="relative">
-              <Input 
-                type="date" 
-                value={formData.expiryDate} 
-                onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} 
-                className="bg-white border-blue-200 h-9 text-sm"
-              />
-            </div>
-          </div>
-        </div>
+        {/* SECTION 3: Timeline */}
+<div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
+  <div className="space-y-1.5">
+    <Label className="text-[10px] font-bold text-blue-700 uppercase">Effective Date</Label>
+    <Input
+      type="date"
+      value={formData.startDate}
+      min={format(new Date(), "yyyy-MM-dd")}
+      onChange={(e) => setFormData({ ...formData, startDate: e.target.value, expiryDate: "" })}
+      className="bg-white border-blue-200 h-9 text-sm"
+    />
+  </div>
+  <div className="space-y-1.5">
+    <Label className="text-[10px] font-bold text-blue-700 uppercase">Expiration Date</Label>
+    <Input
+      type="date"
+      value={formData.expiryDate}
+      min={formData.startDate || format(new Date(), "yyyy-MM-dd")}
+      disabled={!formData.startDate}
+      onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+      className="bg-white border-blue-200 h-9 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+    />
+  </div>
+</div>
       </div>
     </div>
 
@@ -979,7 +1287,7 @@ const counts = useMemo(() => {
         Cancel
       </Button>
       <Button 
-        onClick={handleAdd}
+        onClick={handleAddPolicy}
         className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-200 transition-all active:scale-95"
       >
         Save Policy
@@ -995,6 +1303,10 @@ const counts = useMemo(() => {
           </DialogHeader>
           {selectedPolicy && (
             <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Policy Number</Label>
+                <Input value={formData.policyNumber} onChange={(e) => setFormData({ ...formData, policyNumber: e.target.value })} />
+              </div>
               <div className="grid gap-2">
                 <Label>Plate Number</Label>
                 <Input value={formData.plate} onChange={(e) => setFormData({ ...formData, plate: e.target.value })} />
@@ -1016,15 +1328,27 @@ const counts = useMemo(() => {
                 </Select>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Start Date</Label>
-                  <Input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Expiry Date</Label>
-                  <Input type="date" value={formData.expiryDate} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} />
-                </div>
-              </div>
+  <div className="grid gap-2">
+    <Label>Start Date</Label>
+    <Input
+      type="date"
+      value={formData.startDate}
+      min={format(new Date(), "yyyy-MM-dd")}
+      onChange={(e) => setFormData({ ...formData, startDate: e.target.value, expiryDate: "" })}
+    />
+  </div>
+  <div className="grid gap-2">
+    <Label>Expiry Date</Label>
+    <Input
+      type="date"
+      value={formData.expiryDate}
+      min={formData.startDate || format(new Date(), "yyyy-MM-dd")}
+      disabled={!formData.startDate}
+      onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+      className="disabled:opacity-50 disabled:cursor-not-allowed"
+    />
+  </div>
+</div>
               <div className="grid gap-2">
                 <Label>Contact</Label>
                 <Input value={formData.contact} onChange={(e) => setFormData({ ...formData, contact: e.target.value })} />
@@ -1033,7 +1357,7 @@ const counts = useMemo(() => {
           )}
           <DialogFooter className="flex flex-col-reverse sm:flex-row gap-3">
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleEdit}>Update</Button>
+            <Button onClick={handleEditPolicy}>Update</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1054,7 +1378,7 @@ const counts = useMemo(() => {
       <AlertDialogDescription className="text-slate-500 mt-2">
         This action cannot be undone. You are about to permanently remove the policy for 
         <span className="block mt-1 font-bold text-slate-900">
-          Plate: {selectedPolicy?.plate}
+          Policy: {selectedPolicy ? getPolicyReference(selectedPolicy) : ""}
         </span>
       </AlertDialogDescription>
     </AlertDialogHeader>
@@ -1080,7 +1404,7 @@ const counts = useMemo(() => {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="bg-muted p-2 rounded text-xs font-mono text-primary">
-              Use tags: {'{owner}'}, {'{plate}'}, {'{days}'}
+              Use tags: {'{owner}'}, {'{policy_number}'}, {'{plate}'}, {'{days}'}
             </div>
             <textarea
               className="w-full min-h-[150px] rounded border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"

@@ -36,11 +36,13 @@ const itemVariants = {
 interface PolicyHistoryData {
   id: number;
   policy_id: number;
+  policy_number: string;
   plate: string;
   owner: string;
   company: string;
   expiry_date: string;
   renewed_date: string | null;
+  created_by: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -76,6 +78,8 @@ const PolicyHistory = () => {
   
   const { toast } = useToast();
   const API_URL = import.meta.env.VITE_API_URL;
+  const getPolicyReference = (item: Pick<PolicyHistoryData, "policy_number" | "plate">) =>
+    item.policy_number || item.plate || "N/A";
 
   const fetchData = async () => {
     setLoading(true);
@@ -137,7 +141,10 @@ const PolicyHistory = () => {
     const s = search.toLowerCase();
     if (activeTab === "policies") {
       return history.filter(h => {
-        const matchesSearch = h.plate?.toLowerCase().includes(s) || h.owner?.toLowerCase().includes(s);
+        const matchesSearch =
+          h.policy_number?.toLowerCase().includes(s) ||
+          h.plate?.toLowerCase().includes(s) ||
+          h.owner?.toLowerCase().includes(s);
         const matchesStatus = statusFilter === "all" || 
                               (statusFilter === "expired" && !h.renewed_date) || 
                               (statusFilter === "renewed" && !!h.renewed_date);
@@ -158,9 +165,9 @@ const PolicyHistory = () => {
     let rows: any[] = [];
 
     if (activeTab === "policies") {
-      headers = ["Plate", "Owner", "Company", "Expiry Date", "Renewal Date"];
+      headers = ["Policy Number", "Plate", "Owner", "Company", "Expiry Date", "Renewal Date"];
       rows = (filteredData as PolicyHistoryData[]).map(h => [
-        h.plate, h.owner, h.company, h.expiry_date, h.renewed_date || "N/A"
+        h.policy_number || "", h.plate, h.owner, h.company, h.expiry_date, h.renewed_date || "N/A"
       ]);
     } else {
       headers = ["Phone Number", "Message", "Cost (RWF)", "Status", "Date"];
@@ -265,7 +272,7 @@ const PolicyHistory = () => {
           <div className="relative w-full lg:flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
             <Input
-              placeholder={activeTab === 'policies' ? "Search Plate or Owner..." : "Search Phone Number..."}
+              placeholder={activeTab === 'policies' ? "Search policy number, plate, or owner..." : "Search Phone Number..."}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-12 h-12 border-none bg-transparent focus-visible:ring-0 text-base"
@@ -332,7 +339,7 @@ const PolicyHistory = () => {
                 <div className="flex flex-col md:flex-row justify-between gap-6">
                   <div className="flex-grow">
                     <div className="flex items-center gap-2 mb-2">
-                      <h3 className="text-xl font-black uppercase tracking-tighter">{item.plate || item.phone_number}</h3>
+                      <h3 className="text-xl font-black uppercase tracking-tighter">{item.policy_number || item.plate || item.phone_number}</h3>
                       {activeTab === 'policies' && <Badge variant="outline" className="text-[9px] font-bold">{item.company}</Badge>}
                       {activeTab === 'messages' && (
                         <Badge className={cn("text-[9px] font-black", item.delivery_status === 'Success' ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700")}>
@@ -341,7 +348,7 @@ const PolicyHistory = () => {
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground flex items-center gap-2 italic">
-                      {activeTab === 'policies' ? <><User size={14}/> {item.owner}</> : `"${item.message}"`}
+                      {activeTab === 'policies' ? <><User size={14}/> {item.owner} {item.plate ? `• ${item.plate}` : ""}</> : `"${item.message}"`}
                     </p>
                   </div>
 
@@ -389,7 +396,7 @@ const PolicyHistory = () => {
           )}>
             <div className="text-white">
               <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Policy Detail Record</p>
-              <h2 className="text-3xl font-black italic tracking-tighter uppercase">{selectedPolicy?.plate}</h2>
+              <h2 className="text-3xl font-black italic tracking-tighter uppercase">{selectedPolicy ? getPolicyReference(selectedPolicy) : ""}</h2>
             </div>
             <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md">
               <FileText className="text-white" size={32} />
@@ -406,11 +413,21 @@ const PolicyHistory = () => {
                   </div>
                </div>
                <div className="space-y-1 text-right">
-                  <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Registry ID</p>
+                  <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Internal Record ID</p>
                   <div className="flex items-center justify-end gap-2">
                     <span className="font-mono font-bold">#{selectedPolicy?.policy_id}</span>
                   </div>
                </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-blue-50/50 border border-blue-100 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center shadow-inner">
+                <Car size={20} className="text-blue-600" />
+              </div>
+              <div>
+                <p className="text-[9px] font-black text-blue-500 uppercase">Plate Number</p>
+                <p className="text-lg font-black tracking-tight">{selectedPolicy?.plate || "N/A"}</p>
+              </div>
             </div>
 
             <div className="p-4 rounded-2xl bg-muted/50 border border-muted flex items-center gap-4">

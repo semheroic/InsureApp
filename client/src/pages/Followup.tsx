@@ -22,6 +22,7 @@ const itemVars = {
 
 interface PolicyFollowUp {
   id: number;
+  policy_number: string;
   plate: string;
   owner: string;
   contact: string;
@@ -32,7 +33,6 @@ interface PolicyFollowUp {
 }
 
 const API_FOLLOWUP = `${import.meta.env.VITE_API_URL}/api/followup`;
-const API_REMINDER = `${import.meta.env.VITE_API_URL}/api/policies/send-reminder`;
 
 export default function FollowUps() {
   const { toast } = useToast();
@@ -46,7 +46,7 @@ export default function FollowUps() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(API_FOLLOWUP);
+      const res = await fetch(API_FOLLOWUP, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch data.");
       const json: PolicyFollowUp[] = await res.json();
       setData(json);
@@ -83,8 +83,11 @@ export default function FollowUps() {
 
   const { grouped } = useMemo(() => {
     const currentFiltered = data.filter(p => {
-      const matchesSearch = p.plate.toLowerCase().includes(search.toLowerCase()) || 
-                           p.owner.toLowerCase().includes(search.toLowerCase());
+      const term = search.toLowerCase();
+      const matchesSearch =
+        p.policy_number?.toLowerCase().includes(term) ||
+        p.plate.toLowerCase().includes(term) ||
+        p.owner.toLowerCase().includes(term);
       
       const matchesTime = checkDateInRange(p.followed_at, timeRange);
       
@@ -148,7 +151,7 @@ export default function FollowUps() {
                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                  <input
                    type="text"
-                   placeholder="Search owner or plate..."
+                   placeholder="Search policy number, plate, or owner..."
                    value={search}
                    onChange={(e) => setSearch(e.target.value)}
                    className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border-none ring-1 ring-slate-200 dark:ring-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
@@ -194,7 +197,6 @@ export default function FollowUps() {
                   <PolicyTable 
                     data={grouped.confirmed} 
                     followUpEndpoint={API_FOLLOWUP}
-                    sendReminderEndpoint={API_REMINDER} 
                     refreshData={fetchData} 
                     searchable={false} 
                   />
@@ -203,7 +205,6 @@ export default function FollowUps() {
                   <PolicyTable 
                     data={grouped.pending} 
                     followUpEndpoint={API_FOLLOWUP}
-                    sendReminderEndpoint={API_REMINDER} 
                     refreshData={fetchData} 
                     searchable={false} 
                   />
@@ -212,7 +213,6 @@ export default function FollowUps() {
                   <PolicyTable 
                     data={grouped.missed} 
                     followUpEndpoint={API_FOLLOWUP}
-                    sendReminderEndpoint={API_REMINDER} 
                     refreshData={fetchData} 
                     searchable={false} 
                   />

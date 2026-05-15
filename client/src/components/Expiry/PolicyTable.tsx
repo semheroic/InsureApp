@@ -85,12 +85,16 @@ export const PolicyTable = ({
   const [editedMessage, setEditedMessage] = useState("");
   const [copied, setCopied] = useState(false);
 
+  const getPolicyReference = (policy: any) => policy ? (policy.policy_number || policy.plate || "N/A") : "N/A";
+  const getExpiryDate = (policy: any) => policy ? (policy.expiry_date || policy.expiryDate) : "N/A";
+
   const filteredData = useMemo(() => {
     let results = [...data];
     const term = searchQuery.toLowerCase().trim();
 
     if (term) {
       results = results.filter((p: any) => 
+        String(p.policy_number || "").toLowerCase().includes(term) || 
         String(p.plate).toLowerCase().includes(term) || 
         String(p.contact).toLowerCase().includes(term) ||
         String(p.owner).toLowerCase().includes(term)
@@ -127,12 +131,12 @@ export const PolicyTable = ({
   if (!policy) return "";
 
   const name = policy.owner || "Client";
-  const plate = policy.plate || "";
+  const reference = getPolicyReference(policy);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   // Parse expiry date from your backend (expiry_date or expiryDate)
-  const expiryParts = (policy.expiry_date || policy.expiryDate).split("-");
+  const expiryParts = getExpiryDate(policy).split("-");
   // Expected format from backend: dd-mm-yyyy
   const expiry = new Date(
     Number(expiryParts[2]),     // year
@@ -148,23 +152,23 @@ export const PolicyTable = ({
 
   if (diffDays < 0) {
     statusPhrase = {
-      rw: `ubwishingizi bwa ${plate} bwarangiye hashize iminsi ${Math.abs(diffDays)}`,
-      en: `the insurance for ${plate} expired ${Math.abs(diffDays)} days ago`,
+      rw: `ubwishingizi bwa ${reference} bwarangiye hashize iminsi ${Math.abs(diffDays)}`,
+      en: `the insurance for ${reference} expired ${Math.abs(diffDays)} days ago`,
     };
   } else if (diffDays === 0) {
     statusPhrase = {
-      rw: `ubwishingizi bwa ${plate} buri burangire uyu munsi`,
-      en: `the insurance for ${plate} is expiring today`,
+      rw: `ubwishingizi bwa ${reference} buri burangire uyu munsi`,
+      en: `the insurance for ${reference} is expiring today`,
     };
   } else if (diffDays > 365) {
     statusPhrase = {
-      rw: `ubwishingizi bwa ${plate} buracyari buzima, buzashira nyuma y'umwaka (iminsi ${diffDays})`,
-      en: `the insurance for ${plate} is still active and will expire in more than a year (${diffDays} days)`,
+      rw: `ubwishingizi bwa ${reference} buracyari buzima, buzashira nyuma y'umwaka (iminsi ${diffDays})`,
+      en: `the insurance for ${reference} is still active and will expire in more than a year (${diffDays} days)`,
     };
   } else {
     statusPhrase = {
-      rw: `ubwishingizi bwa ${plate} buzashira mu minsi ${diffDays}`,
-      en: `the insurance for ${plate} will expire in ${diffDays} days`,
+      rw: `ubwishingizi bwa ${reference} buzashira mu minsi ${diffDays}`,
+      en: `the insurance for ${reference} will expire in ${diffDays} days`,
     };
   }
 
@@ -204,11 +208,12 @@ export const PolicyTable = ({
     try {
       const res = await fetch(followUpEndpoint, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ policy_id: actualPolicyId, followup_status: status }),
       });
       if (res.ok) {
-        toast({ title: "Status Updated", description: `Policy ${policy.plate} is now ${status}` });
+        toast({ title: "Status Updated", description: `Policy ${getPolicyReference(policy)} is now ${status}` });
         refreshData?.();
       } else {
         const errorData = await res.json();
@@ -225,7 +230,10 @@ export const PolicyTable = ({
     const actualPolicyId = policy.policy_id || policy.id;
     setLoadingId(`${policy.id}-clear`);
     try {
-      const res = await fetch(`${API_URL}/api/followup/${actualPolicyId}`, { method: "DELETE" });
+      const res = await fetch(`${API_URL}/api/followup/${actualPolicyId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
       if (res.ok) {
         toast({ title: "Status Reset" });
         refreshData?.();
@@ -242,9 +250,9 @@ export const PolicyTable = ({
       toast({ title: "No data to export", variant: "destructive" });
       return;
     }
-    const headers = ["Plate", "Owner", "Contact", "Company", "Expiry Date", "Status"];
+    const headers = ["Policy Number", "Plate", "Owner", "Contact", "Company", "Expiry Date", "Status"];
     const rows = filteredData.map((p: any) => [
-      p.plate, p.owner, p.contact, p.company, p.expiry_date || p.expiryDate, p.followup_status || "Pending"
+      p.policy_number || "", p.plate, p.owner, p.contact, p.company, getExpiryDate(p), p.followup_status || "Pending"
     ]);
     const csvContent = [
       headers.join(","),
@@ -313,7 +321,7 @@ export const PolicyTable = ({
                 </div>
                 <div>
                   <DialogTitle className="text-lg font-bold">Draft Message</DialogTitle>
-                  <p className="text-slate-400 text-xs">Policy: {messagePolicy?.plate}</p>
+                  <p className="text-slate-400 text-xs">Policy: {getPolicyReference(messagePolicy)}</p>
                 </div>
               </div>
               <Badge variant="outline" className="border-slate-700 text-blue-400 bg-blue-500/10 px-3 py-1">
@@ -391,8 +399,8 @@ export const PolicyTable = ({
           {searchable && (
             <div className="relative flex items-center w-full md:max-w-sm group">
               <Search className="absolute left-4 h-4 w-4 text-slate-400 group-focus-within:text-slate-900 dark:group-focus-within:text-white transition-colors z-10" />
-              <Input
-                placeholder="Search plate, owner..."
+                <Input
+                placeholder="Search policy number, plate, owner..."
                 className="pl-11 h-11 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 rounded-xl text-[14px] font-medium tracking-tight shadow-sm focus-visible:ring-1 focus-visible:ring-slate-400"
                 value={searchQuery}
                 onChange={(e) => {
@@ -447,8 +455,9 @@ export const PolicyTable = ({
 
       <div className="rounded-[24px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-sm overflow-hidden">
         <Table>
-          <TableHeader>
-            <TableRow className="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800">
+            <TableHeader>
+              <TableRow className="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800">
+              <TableHead className="py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 pl-8">Policy No.</TableHead>
               <TableHead className="py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500 pl-8">Plate</TableHead>
               <TableHead className="py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Holder</TableHead>
               <TableHead className="py-4 font-bold text-[10px] uppercase tracking-[0.2em] text-slate-500">Provider</TableHead>
@@ -473,6 +482,11 @@ export const PolicyTable = ({
                       status === "missed" && "bg-rose-500/[0.07] hover:bg-rose-500/[0.12] dark:bg-rose-500/[0.12]"
                     )}
                   >
+                    <TableCell className="pl-8 py-4">
+                      <span className="text-[12px] font-mono font-bold tracking-tight text-blue-700 dark:text-blue-300">
+                        {policy.policy_number || "N/A"}
+                      </span>
+                    </TableCell>
                     <TableCell className="pl-8 py-4">
                       <span className="text-[13px] font-mono font-bold tracking-tight text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
                         {policy.plate}
@@ -499,7 +513,7 @@ export const PolicyTable = ({
 
                     <TableCell className="text-center py-4">
                       <span className="text-[13px] font-medium text-slate-600 dark:text-slate-400">
-                        {policy.expiry_date || policy.expiryDate}
+                        {getExpiryDate(policy)}
                       </span>
                     </TableCell>
 
@@ -575,7 +589,7 @@ export const PolicyTable = ({
               })
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="h-40 text-center text-[13px] font-medium text-slate-500">
+                <TableCell colSpan={showOverdue ? 7 : 6} className="h-40 text-center text-[13px] font-medium text-slate-500">
                   No policy records found.
                 </TableCell>
               </TableRow>

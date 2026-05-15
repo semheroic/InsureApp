@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { 
-  Compass, ShieldCheck, Users2, BarChart4, 
+  Compass, ShieldCheck, Users2, BarChart4, Activity,
   ClockAlert, Handshake, History, Megaphone,
   Menu, X // Added for mobile toggle
 } from "lucide-react";
@@ -20,7 +20,8 @@ export const Sidebar = () => {
       .get(`${API_URL}/auth/me`, { withCredentials: true })
       .then((res) => {
         setUserRole(res.data.role);
-        if (res.data.role?.toLowerCase() === "admin") fetchCounts();
+        const roleLC = res.data.role?.toLowerCase();
+        if (roleLC === "admin" || roleLC === "manager") fetchCounts();
       })
       .catch(() => console.log("User Auth Error"));
   }, []);
@@ -33,12 +34,15 @@ export const Sidebar = () => {
   };
 
   const isAdmin = userRole?.toLowerCase() === "admin";
+  const isManager = userRole?.toLowerCase() === "manager";
+  const canSeeCounts = isAdmin || isManager;
   const toggleSidebar = () => setIsOpen(!isOpen);
 
   const menuItems = [
     { icon: Compass, label: "Overview", path: "/dashboard", showBadge: false },
     { icon: ShieldCheck, label: "Policies", path: "/policies", showBadge: true, count: counts.policies },
     { icon: Users2, label: "Users", path: "/users", showBadge: true, count: counts.users },
+    ...(isAdmin ? [{ icon: Activity, label: "User Tracking", path: "/admin/activity", showBadge: false }] : []),
   ];
 
   const reportItems = [
@@ -101,7 +105,7 @@ export const Sidebar = () => {
                     <item.icon className="w-5 h-5 opacity-70 group-hover:opacity-100 transition-opacity" strokeWidth={2} />
                     <span>{item.label}</span>
                   </div>
-                  {item.showBadge && isAdmin && (
+                  {item.showBadge && canSeeCounts && (
                     <span className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-black px-2 py-0.5 rounded-lg shadow-xs">
                       {item.count}
                     </span>

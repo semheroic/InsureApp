@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom"; // Essential for the dashboard redirect
 import {
   Dialog,
@@ -42,9 +42,12 @@ interface AdvancedSettingsProps {
   open: boolean;
   onClose: () => void;
   userRole: string;
+  activityScope?: "mine" | "all";
+  onActivityScopeChange?: (scope: "mine" | "all") => void;
 }
 
 type DeleteStep = "password" | "confirm" | "done" | "error";
+type ActivityScope = "mine" | "all";
 
 type SettingCategory = "Data Management" | "Security & Access" | "System Maintenance";
 
@@ -331,10 +334,20 @@ const DeletePoliciesFlow: React.FC<{ onBack: () => void; onDone: () => void }> =
 // ─────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────
-export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ open, onClose, userRole }) => {
+export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
+  open,
+  onClose,
+  userRole,
+  activityScope: activityScopeProp = "all",
+  onActivityScopeChange,
+}) => {
   const navigate = useNavigate(); // Hook for dashboard redirect
   const isAdmin = userRole?.toLowerCase() === "admin";
   const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [activityScope, setActivityScope] = useState<ActivityScope>(activityScopeProp);
+  const [loadingScope, setLoadingScope] = useState(false);
+  const [savingScope, setSavingScope] = useState(false);
+  const [scopeError, setScopeError] = useState("");
 
   const visibleSettings = SETTINGS.filter((s) => !s.adminOnly || isAdmin);
 
@@ -358,6 +371,80 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ open, onClos
   const handleClose = () => {
     setActiveAction(null);
     onClose();
+  };
+
+  useEffect(() => {
+    setActivityScope(activityScopeProp);
+  }, [activityScopeProp]);
+
+  useEffect(() => {
+    if (!open || !isAdmin) return;
+
+    let cancelled = false;
+
+    const loadActivityScope = async () => {
+      setLoadingScope(true);
+      setScopeError("");
+      try {
+        const res = await fetch(`${API_URL}/admin/activity-scope`, {
+          credentials: "include",
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to load activity scope.");
+        }
+
+        if (!cancelled) {
+          setActivityScope(data.scope === "mine" ? "mine" : "all");
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setScopeError(err.message || "Failed to load activity scope.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingScope(false);
+        }
+      }
+    };
+
+    loadActivityScope();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isAdmin]);
+
+  const updateActivityScope = async (scope: ActivityScope) => {
+    if (!isAdmin) return;
+
+    setSavingScope(true);
+    setScopeError("");
+    try {
+      const res = await fetch(`${API_URL}/admin/activity-scope`, {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ scope }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update activity scope.");
+      }
+
+      setActivityScope(data.scope);
+      onActivityScopeChange?.(data.scope);
+      handleClose();
+      window.location.reload();
+    } catch (err: any) {
+      setScopeError(err.message || "Failed to update activity scope.");
+    } finally {
+      setSavingScope(false);
+    }
   };
 
   return (
@@ -388,6 +475,73 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ open, onClos
             <DeletePoliciesFlow onBack={() => setActiveAction(null)} onDone={handleActionDone} />
           ) : (
             <div className="max-h-[55vh] overflow-y-auto pr-2 space-y-8 scrollbar-thin">
+              {isAdmin && (
+                <div className="space-y-3">
+                  <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.2em] px-1">
+                    Activity Visibility
+                  </h3>
+                  <div className="rounded-xl border border-border/40 bg-muted/20 p-4 space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Admin Activity Scope</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Choose whether your pages show only records you created or activity from all users.
+                        </p>
+                      </div>
+                      <Badge variant="secondary" className="h-5 px-2 text-[9px] font-bold uppercase">
+                        {activityScope === "all" ? "All Users" : "My Activity"}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        disabled={loadingScope || savingScope}
+                        onClick={() => updateActivityScope("mine")}
+                        className={cn(
+                          "rounded-xl border p-3 text-left transition-all disabled:opacity-60",
+                          activityScope === "mine"
+                            ? "border-primary bg-primary/5"
+                            : "border-border/40 hover:border-primary/40 hover:bg-muted/40"
+                        )}
+                      >
+                        <p className="text-sm font-semibold">My Activity</p>
+                        <p className="text-xs text-muted-foreground mt-1">Show only records you created.</p>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={loadingScope || savingScope}
+                        onClick={() => updateActivityScope("all")}
+                        className={cn(
+                          "rounded-xl border p-3 text-left transition-all disabled:opacity-60",
+                          activityScope === "all"
+                            ? "border-primary bg-primary/5"
+                            : "border-border/40 hover:border-primary/40 hover:bg-muted/40"
+                        )}
+                      >
+                        <p className="text-sm font-semibold">All Users</p>
+                        <p className="text-xs text-muted-foreground mt-1">Show activity from every user account.</p>
+                      </button>
+                    </div>
+
+                    {(loadingScope || savingScope) && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        {savingScope ? "Applying activity scope..." : "Loading activity scope..."}
+                      </p>
+                    )}
+
+                    {scopeError && (
+                      <p className="text-xs text-destructive flex items-center gap-2">
+                        <XCircle className="w-3.5 h-3.5" />
+                        {scopeError}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {(Object.keys(groupedSettings) as SettingCategory[]).map((category) => (
                 <div key={category} className="space-y-3">
                   <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.2em] px-1">

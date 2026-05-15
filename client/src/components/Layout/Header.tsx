@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { AdvancedSettings } from "@/components/AdvancedSettings"; // ← new import
+import { useActivityScope } from "@/contexts/ActivityScopeContext";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const SESSION_DURATION_HOURS = 8;
@@ -26,21 +27,26 @@ export const Header = () => {
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const notificationSound = useRef<HTMLAudioElement | null>(null);
+  const { setActivityScope, setIsAdmin } = useActivityScope();
 
   // ─── States ───────────────────────────────────────────────────────────────
   const [user, setUser] = useState({
-    id: 0, name: "", email: "", profile_picture: "", role: "",
+    id: 0, name: "", email: "", profile_picture: "", role: "", activity_scope: "mine" as "mine" | "all",
   });
-  const [notifications, setNotifications]   = useState([]);
-  const [unreadCount, setUnreadCount]       = useState(0);
-  const [search, setSearch]                 = useState("");
-  const [isSearchOpen, setIsSearchOpen]     = useState(false);
-  const [activeTab, setActiveTab]           = useState<"all" | "unread">("all");
-  const [theme, setTheme]                   = useState(localStorage.getItem("theme") || "light");
-  const [timeLeft, setTimeLeft]             = useState("");
-  const [progress, setProgress]             = useState(100);
-  const [selectedLog, setSelectedLog]       = useState<any>(null);
-  const [advancedOpen, setAdvancedOpen]     = useState(false); // ← new
+  const [smsNotifications, setSmsNotifications]   = useState([]);
+  const [notifications, setNotifications]         = useState([]);
+  const [smsUnreadCount, setSmsUnreadCount]       = useState(0);
+  const [systemUnreadCount, setSystemUnreadCount] = useState(0);
+  const [notificationSection, setNotificationSection] = useState<"sms" | "system">("sms");
+  const [search, setSearch]                       = useState("");
+  const [isSearchOpen, setIsSearchOpen]           = useState(false);
+  const [activeTab, setActiveTab]                 = useState<"all" | "unread">("all");
+  const [theme, setTheme]                         = useState(localStorage.getItem("theme") || "light");
+  const [timeLeft, setTimeLeft]                   = useState("");
+  const [progress, setProgress]                   = useState(100);
+  const [selectedLog, setSelectedLog]             = useState<any>(null);
+  const [advancedOpen, setAdvancedOpen]           = useState(false); // ← new
+  const [notificationPage, setNotificationPage]   = useState(0);
 
   const isAdmin = useMemo(() => user.role?.toLowerCase() === "admin", [user.role]);
 
@@ -62,16 +68,30 @@ export const Header = () => {
   // ─── Notifications ────────────────────────────────────────────────────────
   const fetchNotifications = async () => {
     try {
-      const res  = await fetch(`${API_URL}/sms/logs`, { credentials: "include" });
-      const data = await res.json();
+      const [smsRes, systemRes] = await Promise.all([
+        fetch(`${API_URL}/sms/logs`, { credentials: "include" }),
+        fetch(`${API_URL}/notifications`, { credentials: "include" }),
+      ]);
 
-      const newLogs   = data.logs   || [];
-      const newUnread = data.unread || 0;
+      const smsData = await smsRes.json();
+      const systemData = systemRes.ok ? await systemRes.json() : { notifications: [], unread: 0 };
 
-      if (newUnread > unreadCount && unreadCount !== 0) playNotificationSound();
+      const newSmsNotifications = smsData.logs || [];
+      const newSmsUnread = smsData.unread || 0;
+      const newSystemNotifications = systemData.notifications || [];
+      const newSystemUnread = systemData.unread || 0;
 
-      setNotifications(newLogs);
-      setUnreadCount(newUnread);
+      const previousTotalUnread = smsUnreadCount + systemUnreadCount;
+      const newTotalUnread = newSmsUnread + newSystemUnread;
+
+      if (newTotalUnread > previousTotalUnread && previousTotalUnread !== 0) {
+        playNotificationSound();
+      }
+
+      setSmsNotifications(newSmsNotifications);
+      setSmsUnreadCount(newSmsUnread);
+      setNotifications(newSystemNotifications);
+      setSystemUnreadCount(newSystemUnread);
     } catch (err) {
       console.error("Fetch Error:", err);
     }
@@ -94,7 +114,11 @@ export const Header = () => {
 
   const markAsRead = async (id: number) => {
     try {
-      await fetch(`${API_URL}/sms/logs/${id}/read`, {
+      const endpoint = notificationSection === "sms"
+        ? `${API_URL}/sms/logs/${id}/read`
+        : `${API_URL}/notifications/${id}/read`;
+
+      await fetch(endpoint, {
         method: "PUT", credentials: "include",
       });
       fetchNotifications();
@@ -105,7 +129,11 @@ export const Header = () => {
 
   const markAllRead = async () => {
     try {
-      await fetch(`${API_URL}/sms/mark-read`, { method: "PUT", credentials: "include" });
+      const endpoint = notificationSection === "sms"
+        ? `${API_URL}/sms/mark-read`
+        : `${API_URL}/notifications/mark-read`;
+
+      await fetch(endpoint, { method: "PUT", credentials: "include" });
       fetchNotifications();
     } catch (err) {
       console.error(err);
@@ -116,13 +144,17 @@ export const Header = () => {
   useEffect(() => {
     fetch(`${API_URL}/auth/me`, { credentials: "include" })
       .then(res => (res.ok ? res.json() : Promise.reject()))
-      .then(data => setUser(data))
+      .then(data => {
+        setUser(data);
+        const userIsAdmin = data.role?.toLowerCase() === "admin";
+        setIsAdmin(userIsAdmin);
+      })
       .catch(() => navigate("/"));
 
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 20000);
     return () => clearInterval(interval);
-  }, [navigate, unreadCount]);
+  }, [navigate]);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -161,10 +193,28 @@ export const Header = () => {
 
   // ─── Derived ──────────────────────────────────────────────────────────────
   const filteredNotifications = useMemo(() => {
-    return notifications.filter(
+    const current = notificationSection === "sms" ? smsNotifications : notifications;
+    return current.filter(
       (n: any) => activeTab === "all" || n.is_read === 0
     );
-  }, [notifications, activeTab]);
+  }, [notificationSection, smsNotifications, notifications, activeTab]);
+
+  const totalUnreadCount = smsUnreadCount + systemUnreadCount;
+  const displayName = user.name || "User";
+  const itemsPerPage = 3;
+  const maxNotificationPage = Math.max(0, Math.ceil(filteredNotifications.length / itemsPerPage) - 1);
+  const visibleNotifications = filteredNotifications.slice(
+    notificationPage * itemsPerPage,
+    (notificationPage + 1) * itemsPerPage
+  );
+
+  useEffect(() => {
+    setNotificationPage(0);
+  }, [notificationSection, activeTab, filteredNotifications.length]);
+
+  useEffect(() => {
+    setNotificationPage(prev => Math.min(prev, maxNotificationPage));
+  }, [maxNotificationPage]);
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -174,6 +224,11 @@ export const Header = () => {
         open={advancedOpen}
         onClose={() => setAdvancedOpen(false)}
         userRole={user.role}
+        activityScope={user.activity_scope}
+        onActivityScopeChange={(scope) => {
+          setUser((prev) => ({ ...prev, activity_scope: scope }));
+          setActivityScope(scope, isAdmin);
+        }}
       />
 
       <header className="fixed top-0 right-0 left-0 lg:left-[280px] h-16 border-b border-muted/30 bg-background/60 backdrop-blur-md z-50 transition-all duration-300">
@@ -255,17 +310,19 @@ export const Header = () => {
                   size="icon"
                   className={cn(
                     "relative w-10 h-10 md:w-11 md:h-11 rounded-xl md:rounded-2xl transition-all",
-                    unreadCount > 0 && "bg-primary/5"
+                    totalUnreadCount > 0 && "bg-primary/5"
                   )}
                 >
                   <Bell
                     className={cn(
                       "w-4 h-4 md:w-5 md:h-5 transition-transform",
-                      unreadCount > 0 ? "text-primary animate-ring" : "text-muted-foreground"
+                      totalUnreadCount > 0 ? "text-primary animate-ring" : "text-muted-foreground"
                     )}
                   />
-                  {unreadCount > 0 && (
-                    <span className="absolute top-2.5 right-2.5 md:top-3 md:right-3 h-2 w-2 md:h-2.5 md:w-2.5 rounded-full bg-primary ring-2 md:ring-4 ring-background shadow-sm" />
+                  {totalUnreadCount > 0 && (
+                    <span className="absolute top-2 right-2 md:top-2.5 md:right-2.5 min-w-[18px] px-1.5 text-[10px] md:text-[11px] font-black leading-none rounded-full bg-primary text-white flex items-center justify-center">
+                      {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
+                    </span>
                   )}
                 </Button>
               </DropdownMenuTrigger>
@@ -287,7 +344,7 @@ export const Header = () => {
                         <ArrowLeft className="w-4 h-4" />
                       </Button>
                       <div className="flex-1">
-                        <h3 className="font-bold text-xs md:text-sm truncate">{selectedLog.phone_number}</h3>
+                        <h3 className="font-bold text-xs md:text-sm truncate">{selectedLog.title || selectedLog.phone_number || "Notification"}</h3>
                         <p className="text-[8px] md:text-[10px] text-muted-foreground uppercase font-black tracking-widest opacity-70">
                           Details
                         </p>
@@ -299,9 +356,11 @@ export const Header = () => {
                           {selectedLog.message}
                         </p>
                         <div className="flex justify-between items-end mt-4">
-                          <span className="text-[8px] font-mono text-muted-foreground">
-                            Cost: ${selectedLog.cost || "0.00"}
-                          </span>
+                          {notificationSection === "sms" && (
+                            <span className="text-[8px] font-mono text-muted-foreground">
+                              Cost: ${selectedLog.cost || "0.00"}
+                            </span>
+                          )}
                           <span className="text-[9px] md:text-[10px] text-muted-foreground block text-right">
                             {new Date(selectedLog.created_at).toLocaleString()}
                           </span>
@@ -318,14 +377,40 @@ export const Header = () => {
                 ) : (
                   /* ── List view ── */
                   <>
-                    <div className="p-4 md:p-6 border-b bg-muted/10">
-                      <div className="flex justify-between items-center mb-4">
+                    <div className="p-4 md:p-6 border-b bg-muted/10 space-y-3">
+                      <div className="flex justify-between items-center gap-3">
                         <h3 className="font-bold text-base md:text-lg">Inbox</h3>
                         <button
                           onClick={(e) => { e.preventDefault(); markAllRead(); }}
                           className="h-7 text-[9px] md:text-[11px] font-bold text-primary uppercase hover:opacity-70"
                         >
                           Mark all read
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setNotificationSection("sms")}
+                          className={cn(
+                            "w-full text-[9px] font-bold uppercase py-2 rounded-xl transition-all",
+                            notificationSection === "sms"
+                              ? "bg-background text-primary shadow-sm"
+                              : "bg-muted/20 text-muted-foreground"
+                          )}
+                        >
+                          SMS {smsUnreadCount > 0 ? `(${smsUnreadCount})` : ""}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNotificationSection("system")}
+                          className={cn(
+                            "w-full text-[9px] font-bold uppercase py-2 rounded-xl transition-all",
+                            notificationSection === "system"
+                              ? "bg-background text-primary shadow-sm"
+                              : "bg-muted/20 text-muted-foreground"
+                          )}
+                        >
+                          System {systemUnreadCount > 0 ? `(${systemUnreadCount})` : ""}
                         </button>
                       </div>
                       <div className="flex gap-1 p-1 bg-muted/40 rounded-xl border border-muted/10">
@@ -361,7 +446,7 @@ export const Header = () => {
                           <p className="text-[10px]">No notifications</p>
                         </div>
                       ) : (
-                        filteredNotifications.map((n: any) => (
+                        visibleNotifications.map((n: any) => (
                           <div
                             key={n.id}
                             className={cn(
@@ -374,7 +459,7 @@ export const Header = () => {
                               <div className={cn("w-2 h-2 rounded-full", !n.is_read ? "bg-primary" : "bg-muted")} />
                               <div className="max-w-[120px] md:max-w-none">
                                 <p className={cn("text-xs font-bold truncate", !n.is_read ? "text-foreground" : "text-muted-foreground")}>
-                                  {n.phone_number}
+                                  {n.title || n.phone_number || n.activity_type || "Notification"}
                                 </p>
                                 <p className="text-[9px] text-muted-foreground truncate max-w-[150px]">
                                   {n.message}
@@ -393,6 +478,35 @@ export const Header = () => {
                         ))
                       )}
                     </div>
+                    {filteredNotifications.length > itemsPerPage && (
+                      <div className="px-4 py-3 border-t bg-muted/10 flex items-center justify-between text-[10px] md:text-[11px] text-muted-foreground">
+                        <span>Page {notificationPage + 1} of {maxNotificationPage + 1}</span>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={notificationPage === 0}
+                            onClick={() => setNotificationPage(prev => Math.max(prev - 1, 0))}
+                            className={cn(
+                              "px-2 py-1 rounded-lg transition-all",
+                              notificationPage === 0 ? "bg-muted/30 text-muted-foreground cursor-not-allowed" : "bg-background text-primary hover:bg-primary/10"
+                            )}
+                          >
+                            Prev
+                          </button>
+                          <button
+                            type="button"
+                            disabled={notificationPage === maxNotificationPage}
+                            onClick={() => setNotificationPage(prev => Math.min(prev + 1, maxNotificationPage))}
+                            className={cn(
+                              "px-2 py-1 rounded-lg transition-all",
+                              notificationPage === maxNotificationPage ? "bg-muted/30 text-muted-foreground cursor-not-allowed" : "bg-background text-primary hover:bg-primary/10"
+                            )}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </DropdownMenuContent>
@@ -422,12 +536,17 @@ export const Header = () => {
                   <div className="text-left hidden sm:block">
                     <div className="flex items-center gap-2 mb-0.5">
                       <p className="text-[11px] md:text-[13px] font-bold truncate max-w-[80px] md:max-w-none">
-                        {user.name.split(" ")[0]}
+                        {displayName}
                       </p>
                       <Badge className="h-[14px] md:h-[18px] px-1 md:px-2 text-[7px] md:text-[9px] uppercase font-black bg-primary/10 text-primary border-none">
                         {user.role}
                       </Badge>
                     </div>
+                    {isAdmin && (
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                        Scope: {user.activity_scope === "all" ? "All Users" : "My Activity"}
+                      </p>
+                    )}
                   </div>
                 </Button>
               </DropdownMenuTrigger>

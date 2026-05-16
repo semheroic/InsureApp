@@ -50,6 +50,7 @@ export const Sidebar = () => {
     { icon: ClockAlert, label: "Expiry Report", path: "/reports/expiry" },
     { icon: Handshake, label: "Follow Ups", path: "/reports/Followups" },
     { icon: History, label: "History Log", path: "/reports/history" },
+    { icon: History, label:"Failed Imports", path: "/failed-imports" },
   ];
 
   return (

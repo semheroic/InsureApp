@@ -68,12 +68,13 @@ import {
   endOfWeek, 
   startOfMonth, 
   endOfMonth, 
-  parseISO, 
   startOfDay, 
   endOfDay 
 } from "date-fns";
 
 import { DateRange } from "react-day-picker";
+import { useNavigate } from "react-router-dom";
+import { ToastAction } from "@/components/ui/toast";
 
 axios.defaults.withCredentials = true;
 
@@ -103,14 +104,28 @@ const BASE = import.meta.env.VITE_API_URL;
 const API_URL = `${BASE}/policies`;
 const AUTH_URL = `${BASE}/auth/me`;
 /* ---------------- HELPERS ---------------- */
-const parseDMYtoISO = (date: string) => {
-  const [day, month, year] = date.split("-").map(Number);
-  return new Date(year, month - 1, day, 23, 59, 59); // Month is 0-indexed
+const parsePolicyDate = (date: string | undefined) => {
+  if (!date) return new Date(NaN);
+
+  const value = date.trim();
+  const dmy = value.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dmy) {
+    const [, day, month, year] = dmy;
+    return new Date(Number(year), Number(month) - 1, Number(day), 23, 59, 59);
+  }
+
+  const ymd = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (ymd) {
+    const [, year, month, day] = ymd;
+    return new Date(Number(year), Number(month) - 1, Number(day), 23, 59, 59);
+  }
+
+  return new Date(value);
 };
 
 const daysBetween = (date: string) => {
   const today = new Date();
-  const target = parseDMYtoISO(date);
+  const target = parsePolicyDate(date);
   const diff = target.getTime() - today.getTime();
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
 };
@@ -130,8 +145,11 @@ const validateRWPhone = (phone: string) => /^(\+?250|0)?(7[2389])[0-9]{7}$/.test
 const parseDateToISO = (value: string | undefined): string | null => {
   if (!value) return null;
   const v = value.trim();
-  const iso = new Date(v);
-  if (!isNaN(iso.getTime())) return iso.toISOString().split("T")[0];
+
+  const ymd = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (ymd) {
+    return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+  }
 
   const dmy = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (dmy) {
@@ -140,8 +158,20 @@ const parseDateToISO = (value: string | undefined): string | null => {
     const mm = m.padStart(2, "0");
     return `${y}-${mm}-${dd}`;
   }
+
+  const iso = new Date(v);
+  if (!isNaN(iso.getTime())) return iso.toISOString().split("T")[0];
   return null;
 };
+
+const formatDateForApi = (value: string | undefined) => {
+  const iso = parseDateToISO(value);
+  if (!iso) return "";
+  const [year, month, day] = iso.split("-");
+  return `${day}-${month}-${year}`;
+};
+
+const toDateInputValue = (value: string | undefined) => parseDateToISO(value) || "";
 
 const normalizeContact = (value: string | undefined) => {
   if (!value) return "";
@@ -177,7 +207,7 @@ const splitCSVLine = (line: string): string[] => {
 const importCSV = async (file: File) => {
   const text = await file.text();
   const lines = text.split(/\r?\n/).filter(Boolean);
-  if (!lines.length) return { policies: [], errors: ["Empty CSV"] };
+  if (!lines.length) return { policies: [], errors: ["Empty CSV"], failedRows: [] };
 
   const headers = splitCSVLine(lines[0]).map(h => h.trim().toLowerCase());
 
@@ -185,10 +215,11 @@ const importCSV = async (file: File) => {
   const required = ["policy_number", "owner", "company", "start_date", "expiry_date", "contact"];
 
   const missingHeaders = required.filter(h => !headers.includes(h));
-  if (missingHeaders.length) return { policies: [], errors: [`Missing headers: ${missingHeaders.join(", ")}`] };
+  if (missingHeaders.length) return { policies: [], errors: [`Missing headers: ${missingHeaders.join(", ")}`], failedRows: [] };
 
   const policies: any[] = [];
   const errors: string[] = [];
+  const failedRows: Array<{ row: number; reason: string; data: Record<string, string> }> = [];
 
   lines.slice(1).forEach((line, idx) => {
     const rowNum = idx + 2;
@@ -211,29 +242,37 @@ const importCSV = async (file: File) => {
     if (!validateRWPhone(contact)) rowErrors.push("invalid contact number (use 07xxxxxxxx or +2507xxxxxxxx)");
 
     if (rowErrors.length) {
-      errors.push(`Row ${rowNum}: ${rowErrors.join(" | ")}`);
+      const reason = rowErrors.join(" | ");
+      errors.push(`Row ${rowNum}: ${reason}`);
+      failedRows.push({
+        row: rowNum,
+        reason,
+        data: {
+          policy_number: row.policy_number?.trim() ?? "",
+          plate: row.plate?.trim() ?? "",
+          owner: row.owner?.trim() ?? "",
+          company: row.company?.trim() ?? "",
+          start_date: row.start_date?.trim() ?? "",
+          expiry_date: row.expiry_date?.trim() ?? "",
+          contact: row.contact?.trim() ?? "",
+        },
+      });
       return;
     }
 
-    const msPerDay = 1000 * 60 * 60 * 24;
-    const days_remaining = Math.ceil(
-      (new Date(expiry_date!).getTime() - Date.now()) / msPerDay
-    );
-
     policies.push({
+      row_number: rowNum,
       policy_number: row.policy_number?.trim(),
       plate: row.plate?.trim() ?? "",        // empty string if blank or missing
       owner: row.owner?.trim(),
       company: row.company?.trim().toUpperCase(),
-      start_date: start_date!,
-      expiry_date: expiry_date!,
+      start_date: formatDateForApi(start_date!) || row.start_date?.trim() || "",
+      expiry_date: formatDateForApi(expiry_date!) || row.expiry_date?.trim() || "",
       contact,
-      status: "Active",
-      days_remaining,
     });
   });
 
-  return { policies, errors };
+  return { policies, errors, failedRows };
 };
 
 /* ---------------- MAIN COMPONENT ---------------- */
@@ -281,7 +320,7 @@ const Policies = () => {
   const isAdmin = contextIsAdmin;
   const isManager = roleClean === "manager";
   const canModify = isAdmin || isManager;
-  
+  const navigate = useNavigate();
 /*  store original dates */
 const [originalDates, setOriginalDates] = useState<{
   start_date: string;
@@ -321,7 +360,7 @@ const [originalDates, setOriginalDates] = useState<{
   /* ---------------- FILTERS & PAGINATION ---------------- */
   const filteredPolicies = useMemo(() => {
     return policies.filter(p => {
-      const pDate = parseISO(p.start_date);
+      const pDate = parsePolicyDate(p.start_date);
       const today = new Date();
       const searchLower = searchQuery.toLowerCase().trim();
       let matchesSearch = !searchQuery || [p.policy_number, p.plate, p.owner, p.company].some(v => v.toLowerCase().includes(searchLower));
@@ -366,7 +405,7 @@ const counts = useMemo(() => {
   let monthlyCount = 0;
 
   policies.forEach((p) => {
-    const start = parseISO(p.start_date);
+    const start = parsePolicyDate(p.start_date);
 
     // ----- Date filters -----
     if (isSameDay(start, today)) todayCount++;
@@ -432,8 +471,8 @@ const getUserName = (userId?: number | null) => {
         plate: formData.plate,
         owner: formData.owner,
         company: formData.company,
-        start_date: formData.startDate,
-        expiry_date: formData.expiryDate,
+        start_date: formatDateForApi(formData.startDate),
+        expiry_date: formatDateForApi(formData.expiryDate),
         contact: formData.contact,
       });
       checkAuthAndFetch();
@@ -456,8 +495,8 @@ const getUserName = (userId?: number | null) => {
     if (datesChanged) {
       // 🔁 RENEW ROUTE
       await axios.put(`${API_URL}/${selectedPolicy.id}/renew`, {
-        start_date: formData.startDate,
-        expiry_date: formData.expiryDate,
+        start_date: formatDateForApi(formData.startDate),
+        expiry_date: formatDateForApi(formData.expiryDate),
         contact: formData.contact,
       });
 
@@ -504,16 +543,20 @@ const getUserName = (userId?: number | null) => {
         plate: formData.plate,
         owner: formData.owner,
         company: formData.company,
-        start_date: formData.startDate,
-        expiry_date: formData.expiryDate,
+        start_date: formatDateForApi(formData.startDate),
+        expiry_date: formatDateForApi(formData.expiryDate),
         contact: formData.contact,
       });
       checkAuthAndFetch();
       setIsAddDialogOpen(false);
       setFormData(emptyFormData);
       toast({ title: "Added", description: "Policy created" });
-    } catch {
-      toast({ title: "Error", description: "Failed to add policy", variant: "destructive" });
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err.response?.data?.error || "Failed to add policy",
+        variant: "destructive"
+      });
     }
   };
 
@@ -543,8 +586,8 @@ const getUserName = (userId?: number | null) => {
 
       if (datesChanged) {
         await axios.put(`${API_URL}/${selectedPolicy.id}/renew`, {
-          start_date: formData.startDate,
-          expiry_date: formData.expiryDate,
+          start_date: formatDateForApi(formData.startDate),
+          expiry_date: formatDateForApi(formData.expiryDate),
           contact: formData.contact,
         });
       }
@@ -556,10 +599,10 @@ const getUserName = (userId?: number | null) => {
         title: datesChanged ? "Updated and Renewed" : "Updated",
         description: datesChanged ? "Policy details and dates saved successfully" : "Policy updated successfully",
       });
-    } catch {
+    } catch (err: any) {
       toast({
         title: "Error",
-        description: "Update failed",
+        description: err.response?.data?.error || "Update failed",
         variant: "destructive",
       });
     }
@@ -646,47 +689,61 @@ const getUserName = (userId?: number | null) => {
   if (!file) return;
 
   // Step 1: Parse CSV locally
-  const { policies: imported, errors } = await importCSV(file);
+  const { policies: imported, errors, failedRows } = await importCSV(file);
 
   // Step 2: Show toast if CSV parsing errors
   if (errors.length) {
     toast({
       title: "CSV Parsing Errors",
-      description: `${errors.length} row(s) have errors. Valid rows will still be imported.`,
+      description: `${errors.length} row(s) have format errors. Valid rows, if any, will still be imported.`,
       variant: "destructive",
       duration: 6000,
     });
   }
 
   // Step 3: If no valid rows, stop
-  if (!imported.length) return;
+  if (!imported.length && !failedRows.length) return;
 
   try {
     // Step 4: Send valid rows to backend
-    const res = await axios.post(`${API_URL}/import`, { policies: imported });
-    const { inserted, skipped, insertedRows, skippedRows, message } = res.data;
+    const res = await axios.post(`${API_URL}/import`, { policies: imported, failedRows });
+    const { inserted, updated, skippedRows, message, importSessionId } = res.data;
 
-    // Step 5: Show toast summary
+    // Step 5: Main summary toast
     toast({
       title: "Import Summary",
       description: message,
-      variant: inserted > 0 ? "default" : "destructive",
-      duration: 6000,
+      variant: inserted > 0 || updated > 0 ? "default" : "destructive",
+      duration: 8000,
     });
 
-    // Optional: show detailed toast for skipped rows
-    if (skippedRows.length) {
-      skippedRows.forEach((row: any) => {
-        toast({
-          title: `Row ${row.row} skipped`,
-          description: row.reason,
-          variant: "destructive",
-          duration: 7000,
-        });
+    // Step 6: If there are skipped rows, show ONE consolidated toast with a
+    //         "View Failed Imports" button — admins only
+    if (skippedRows?.length > 0) {
+      toast({
+        title: `${skippedRows.length} row${skippedRows.length > 1 ? "s" : ""} failed to import`,
+        description: "Click to review the exact rows and reasons why they were rejected.",
+        variant: "destructive",
+        duration: 12000,
+
+        // ✅ Only admins get the navigation button
+        action: (
+            <ToastAction
+              altText="View failed imports"
+              onClick={() =>
+                navigate(`/failed-imports/${importSessionId}`, {
+                  state: { importSessionId },
+                })
+              }
+              className="shrink-0 border-white/30 text-white hover:bg-white/20"
+            >
+              View details
+            </ToastAction>
+          ),
       });
     }
 
-    // Step 6: Refresh policies list
+    // Step 7: Refresh policies list
     checkAuthAndFetch();
   } catch (err: any) {
     toast({
@@ -695,13 +752,9 @@ const getUserName = (userId?: number | null) => {
       variant: "destructive",
     });
   } finally {
-    // Reset file input
     e.target.value = "";
   }
 };
-{/*  */}
-
-
   if (loading) return <p className="text-center py-20 text-muted-foreground animate-pulse">Synchronizing policies...</p>;
 
   return (
@@ -893,7 +946,7 @@ const getUserName = (userId?: number | null) => {
             : "bg-background text-muted-foreground border-border hover:border-slate-400 hover:text-foreground"
         )}
       >
-        <span>All Agents</span>
+        <span>All Policies</span>
         <span className={cn(
           "text-xs px-1.5 py-0.5 rounded-full font-bold",
           userFilter === "all" ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
@@ -1005,15 +1058,15 @@ const getUserName = (userId?: number | null) => {
       plate: policy.plate,
       owner: policy.owner,
       company: policy.company,
-      startDate: policy.start_date,
-      expiryDate: policy.expiry_date,
+      startDate: toDateInputValue(policy.start_date),
+      expiryDate: toDateInputValue(policy.expiry_date),
       contact: policy.contact,
     });
 
     // ✅ store originals
     setOriginalDates({
-      start_date: policy.start_date,
-      expiry_date: policy.expiry_date,
+      start_date: toDateInputValue(policy.start_date),
+      expiry_date: toDateInputValue(policy.expiry_date),
     });
 
     setIsEditDialogOpen(true);
@@ -1257,8 +1310,7 @@ const getUserName = (userId?: number | null) => {
     <Input
       type="date"
       value={formData.startDate}
-      min={format(new Date(), "yyyy-MM-dd")}
-      onChange={(e) => setFormData({ ...formData, startDate: e.target.value, expiryDate: "" })}
+      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
       className="bg-white border-blue-200 h-9 text-sm"
     />
   </div>
@@ -1267,10 +1319,8 @@ const getUserName = (userId?: number | null) => {
     <Input
       type="date"
       value={formData.expiryDate}
-      min={formData.startDate || format(new Date(), "yyyy-MM-dd")}
-      disabled={!formData.startDate}
       onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
-      className="bg-white border-blue-200 h-9 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+      className="bg-white border-blue-200 h-9 text-sm"
     />
   </div>
 </div>
@@ -1333,8 +1383,7 @@ const getUserName = (userId?: number | null) => {
     <Input
       type="date"
       value={formData.startDate}
-      min={format(new Date(), "yyyy-MM-dd")}
-      onChange={(e) => setFormData({ ...formData, startDate: e.target.value, expiryDate: "" })}
+      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
     />
   </div>
   <div className="grid gap-2">
@@ -1342,10 +1391,7 @@ const getUserName = (userId?: number | null) => {
     <Input
       type="date"
       value={formData.expiryDate}
-      min={formData.startDate || format(new Date(), "yyyy-MM-dd")}
-      disabled={!formData.startDate}
       onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
-      className="disabled:opacity-50 disabled:cursor-not-allowed"
     />
   </div>
 </div>

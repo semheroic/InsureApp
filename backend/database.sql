@@ -188,7 +188,33 @@ CREATE TABLE IF NOT EXISTS advertisements (
 
 
 -- ============================================================
--- 9. USER ACTIVITY LOGS
+-- 9. FAILED IMPORTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS failed_imports (
+  id                INT           NOT NULL AUTO_INCREMENT,
+  created_by        INT           DEFAULT NULL,
+  import_session_id VARCHAR(36)   NOT NULL,
+  row_number        INT           NOT NULL,
+  policy_number     VARCHAR(50)   DEFAULT NULL,
+  plate             VARCHAR(50)   DEFAULT NULL,
+  owner             VARCHAR(255)  DEFAULT NULL,
+  company           VARCHAR(255)  DEFAULT NULL,
+  contact           VARCHAR(50)   DEFAULT NULL,
+  start_date        DATE          DEFAULT NULL,
+  expiry_date       DATE          DEFAULT NULL,
+  reason            TEXT          NOT NULL,
+  created_at        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  KEY idx_failed_imports_created_by (created_by),
+  KEY idx_failed_imports_session (import_session_id),
+  CONSTRAINT fk_failed_imports_created_by FOREIGN KEY (created_by)
+    REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ============================================================
+-- 10. USER ACTIVITY LOGS
 --    Required by logUserActivity() called on:
 --    login, logout, delete user, bulk delete policies
 -- ============================================================

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import axios from "axios";
 import { Loader2, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
@@ -30,7 +30,11 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
   const fetchAds = async () => {
     setLoading(true);
     try {
-      const res = await axios.get<Ad[]>(`${BASE}/api/ads`, { withCredentials: true });
+      const endpoint = showInactive ? `${BASE}/api/ads` : `${BASE}/api/ads/public`;
+      const res = await axios.get<Ad[]>(
+        endpoint,
+        showInactive ? { withCredentials: true } : undefined
+      );
       let filtered = res.data || [];
       if (!showInactive) filtered = filtered.filter(ad => ad.is_active);
       if (max) filtered = filtered.slice(0, max);
@@ -43,7 +47,13 @@ export const AdsDisplay: React.FC<AdsDisplayProps> = ({ showInactive = false, ma
     }
   };
 
-  useEffect(() => { fetchAds(); }, []);
+  useEffect(() => { fetchAds(); }, [showInactive, max]);
+
+  useEffect(() => {
+    if (currentIndex >= ads.length) {
+      setCurrentIndex(0);
+    }
+  }, [ads.length, currentIndex]);
 
   const nextAd = useCallback(() => {
     setCurrentIndex((prev) => (prev + 1) % ads.length);

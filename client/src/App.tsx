@@ -20,6 +20,7 @@ import PolicyHistoryTracker from "./pages/PolicyHistory";
 import NetworkStatus from "./hooks/NetworkStatus";
 import { AdManager } from "./pages/AdManager";
 import  AdminActivityDashboard  from "./pages/AdminActivityDashboard";
+import FailedImportsTable from "./pages/FailedImportsTable";
 
 const queryClient = new QueryClient();
 
@@ -49,6 +50,8 @@ const App = () => (
           <Route path="/ad-manager" element={<MainLayout><AdManager /></MainLayout>} />
           {/* Protected/Main Routes wrapped in MainLayout */}
           <Route path="/dashboard" element={<MainLayout><Dashboard /></MainLayout>} />
+          <Route path="/failed-imports" element={<MainLayout><FailedImportsTable /></MainLayout>} />
+          <Route path="/failed-imports/:sessionId" element={<MainLayout><FailedImportsTable /></MainLayout>} />
           <Route path="/admin/activity" element={<MainLayout><AdminActivityDashboard /></MainLayout>} />
           <Route path="/policies" element={<MainLayout><Policies /></MainLayout>} />
           <Route path="/users" element={<MainLayout><Users /></MainLayout>} />

@@ -16,6 +16,7 @@ const cron = require("node-cron");
 const multer = require("multer");
 const path = require("path");
 const app = express();
+const REQUEST_BODY_LIMIT = "25mb";
 // ---------------- Multer setup for profile pictures ----------------
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, "public/uploads/"),
@@ -51,8 +52,12 @@ app.use(cors({
   },
   credentials: true
 }));
-app.use(express.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
+app.use(bodyParser.urlencoded({
+  extended: true,
+  limit: REQUEST_BODY_LIMIT,
+  parameterLimit: 50000,
+}));
 
 // ======================== DATABASE ========================
 
@@ -145,6 +150,83 @@ const formatRwandaNumber = number => {
   if (/^250\d+/.test(n)) n = "+" + n;
   if (!n.startsWith("+")) n = "+250" + n;
   return n;
+};
+
+const isValidRwandaNumber = number => /^(\+?250|0)?(7[2389])[0-9]{7}$/.test(String(number || "").trim());
+
+// ==========================================
+// 1. DATE & ROW HELPER FUNCTIONS (Place above your routes)
+// ==========================================
+
+const normalizeImportDate = value => {
+  if (!value) return null;
+
+  let raw = String(value).trim();
+  if (!raw) return null;
+
+  // Handle Excel Serial Numbers (e.g., 46158)
+  if (/^\d{5}$/.test(raw)) {
+    const excelEpoch = new Date(1899, 11, 30);
+    const parsedDate = new Date(excelEpoch.getTime() + parseInt(raw, 10) * 86400000);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate.toISOString().split("T")[0];
+    }
+  }
+
+  // Handle raw un-delimited digits (e.g., "26042024" -> DDMMYYYY)
+  if (/^\d{8}$/.test(raw)) {
+    const day = raw.substring(0, 2);
+    const month = raw.substring(2, 4);
+    const year = raw.substring(4, 8);
+    
+    const normalized = `${year}-${month}-${day}`;
+    const parsed = new Date(`${normalized}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : normalized;
+  }
+
+  // Already standard ISO format (YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const parsed = new Date(`${raw}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : raw;
+  }
+
+  // Day-Month-Year with delimiters (DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY)
+  const dmyMatch = raw.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  if (dmyMatch) {
+    const [, day, month, year] = dmyMatch;
+    const normalized = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    const parsed = new Date(`${normalized}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : normalized;
+  }
+
+  // Fallback for native parsing
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatDateForDisplay = value => {
+  const normalized = normalizeImportDate(value);
+  if (!normalized) return "";
+
+  const [year, month, day] = normalized.split("-");
+  return `${day}-${month}-${year}`;
+};
+
+// ─── THIS IS THE MISSING FUNCTION CAUSING YOUR ERROR ───
+const getImportRowNumber = (row, fallbackIndex = 0) => {
+  const candidate = Number(row?.row_number ?? row?.row);
+  if (Number.isInteger(candidate) && candidate > 0) {
+    return candidate;
+  }
+
+  return fallbackIndex + 2;
 };
 
 const logSMS = async (to, message, cost = 0, status = "pending", messageId = "N/A", createdBy = null) => {
@@ -664,6 +746,48 @@ await query(`
     indexName: "idx_advertisements_created_by",
     constraintName: "fk_advertisements_created_by",
   });
+   await ensureCreatedByAudit({
+    tableName: "advertisements",
+    afterColumn: "id",
+    indexName: "idx_advertisements_created_by",
+    constraintName: "fk_advertisements_created_by",
+  });
+
+  // ✅ ADD THIS RIGHT HERE — failed_imports table + audit
+ await query(`
+  CREATE TABLE IF NOT EXISTS failed_imports (
+    id                INT AUTO_INCREMENT PRIMARY KEY,
+    created_by        INT NULL,
+    import_session_id VARCHAR(36) NOT NULL,
+
+    \`row_number\` INT NOT NULL,
+
+    policy_number     VARCHAR(50),
+    plate             VARCHAR(50),
+    owner             VARCHAR(255),
+    company           VARCHAR(255),
+    contact           VARCHAR(50),
+    start_date        DATE,
+    expiry_date       DATE,
+    reason            TEXT NOT NULL,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    KEY idx_failed_imports_created_by (created_by),
+    KEY idx_failed_imports_session (import_session_id),
+
+    CONSTRAINT fk_failed_imports_created_by
+      FOREIGN KEY (created_by)
+      REFERENCES users(id)
+      ON DELETE SET NULL
+  )
+`);
+
+  await ensureCreatedByAudit({
+    tableName: "failed_imports",
+    afterColumn: "id",
+    indexName: "idx_failed_imports_created_by",
+    constraintName: "fk_failed_imports_created_by",
+  });
 
 
   console.log("✅ Tables ensured");
@@ -1116,7 +1240,18 @@ app.get("/policies", isAuthenticated, async (req, res) => {
 app.get("/policies/:id", isAuthenticated, async (req, res) => {
   const scope = getPolicyScope(req);
   const rows = await query(`
-    SELECT *,
+    SELECT
+      id,
+      created_by,
+      policy_number,
+      plate,
+      owner,
+      company,
+      DATE_FORMAT(start_date, '%d-%m-%Y') AS start_date,
+      DATE_FORMAT(expiry_date, '%d-%m-%Y') AS expiry_date,
+      contact,
+      created_at,
+      updated_at,
       CASE
         WHEN DATEDIFF(expiry_date, CURDATE()) < 0 THEN 'Expired'
         WHEN DATEDIFF(expiry_date, CURDATE()) <= 3 THEN 'Expiring Soon'
@@ -1141,11 +1276,16 @@ app.post("/policies", isAuthenticated, async (req, res) => {
     const cleanPlate = plate?.trim() || " ⛔ Please Update";
     const cleanOwner = owner?.trim();
     const cleanCompany = company?.trim();
+    const normalizedStartDate = normalizeImportDate(start_date);
+    const normalizedExpiryDate = normalizeImportDate(expiry_date);
     const cleanContact = formatRwandaNumber(contact);
 
     // Validate required fields
     if (!cleanPolicyNumber || !cleanPlate || !cleanOwner || !cleanCompany || !start_date || !expiry_date || !cleanContact) {
       return res.status(400).json({ error: "All fields are required" });
+    }
+    if (!normalizedStartDate || !normalizedExpiryDate) {
+      return res.status(400).json({ error: "Dates must use dd-mm-yyyy format" });
     }
 
     const existingPolicy = await query(
@@ -1163,11 +1303,14 @@ app.post("/policies", isAuthenticated, async (req, res) => {
           (created_by, policy_number, plate, owner, company, start_date, expiry_date, contact)
         VALUES (?,?,?,?,?,?,?,?)
       `,
-      [req.session.userId, cleanPolicyNumber, cleanPlate, cleanOwner, cleanCompany, start_date, expiry_date, cleanContact]
+      [req.session.userId, cleanPolicyNumber, cleanPlate, cleanOwner, cleanCompany, normalizedStartDate, normalizedExpiryDate, cleanContact]
     );
 
     // Optional: send SMS notification
-    sendSMS(cleanContact, `Your insurance policy ${cleanPolicyNumber} runs from ${start_date} to ${expiry_date}.`, req.session.userId)
+    const displayStartDate = formatDateForDisplay(normalizedStartDate);
+    const displayExpiryDate = formatDateForDisplay(normalizedExpiryDate);
+
+    sendSMS(cleanContact, `Your insurance policy ${cleanPolicyNumber} runs from ${displayStartDate} to ${displayExpiryDate}.`, req.session.userId)
       .catch(console.error);
 
     await createNotification({
@@ -1175,7 +1318,7 @@ app.post("/policies", isAuthenticated, async (req, res) => {
       targetRole: "User",
       activityType: "POLICY_CREATED",
       title: "Policy Created",
-      message: `Policy ${cleanPolicyNumber} is active from ${start_date} to ${expiry_date}.`,
+      message: `Policy ${cleanPolicyNumber} is active from ${displayStartDate} to ${displayExpiryDate}.`,
       policyId: result.insertId,
     });
 
@@ -1837,10 +1980,15 @@ app.put("/policies/:id/renew", isAuthenticated, async (req, res) => {
   const { start_date, expiry_date, contact } = req.body;
   const policyId = req.params.id;
   const scope = getPolicyScope(req);
+  const normalizedStartDate = normalizeImportDate(start_date);
+  const normalizedExpiryDate = normalizeImportDate(expiry_date);
   const cleanContact = formatRwandaNumber(contact);
 
   if (!start_date || !expiry_date || !cleanContact) {
     return res.status(400).json({ error: "start_date, expiry_date, and contact are required" });
+  }
+  if (!normalizedStartDate || !normalizedExpiryDate) {
+    return res.status(400).json({ error: "Dates must use dd-mm-yyyy format" });
   }
 
   const [current] = await query(
@@ -1860,16 +2008,18 @@ app.put("/policies/:id/renew", isAuthenticated, async (req, res) => {
   await query(`
     INSERT INTO policy_history (policy_id, created_by, expiry_date, renewed_date)
     VALUES (?, ?, ?, ?)
-  `, [policyId, req.session.userId, current.expiry_date, start_date]);
+  `, [policyId, req.session.userId, current.expiry_date, normalizedStartDate]);
 
   // Update policy dates
   await query(`
     UPDATE policies
     SET start_date=?, expiry_date=?, contact=?, updated_at=NOW()
     ${buildWhereClause("id = ?", scope.condition)}
-  `, [start_date, expiry_date, cleanContact, policyId, ...scope.params]);
+  `, [normalizedStartDate, normalizedExpiryDate, cleanContact, policyId, ...scope.params]);
 
-  sendSMS(cleanContact, `Your policy ${current.policy_number} was renewed until ${expiry_date}`, req.session.userId)
+  const displayExpiryDate = formatDateForDisplay(normalizedExpiryDate);
+
+  sendSMS(cleanContact, `Your policy ${current.policy_number} was renewed until ${displayExpiryDate}`, req.session.userId)
     .catch(console.error);
 
   await createNotification({
@@ -1877,7 +2027,7 @@ app.put("/policies/:id/renew", isAuthenticated, async (req, res) => {
     targetRole: "User",
     activityType: "POLICY_RENEWED",
     title: "Policy Renewed",
-    message: `Policy ${current.policy_number} was renewed until ${expiry_date}.`,
+    message: `Policy ${current.policy_number} was renewed until ${displayExpiryDate}.`,
     policyId: policyId,
   });
 
@@ -2143,43 +2293,101 @@ app.post("/api/policies/broadcast", isAuthenticated, async (req, res) => {
 // import policies cvs 
 // POST /policies/import
 app.post("/policies/import", isAuthenticated, async (req, res) => {
-  const { policies } = req.body;
+  const policies = Array.isArray(req.body?.policies) ? req.body.policies : [];
+  const failedRowsFromClient = Array.isArray(req.body?.failedRows) ? req.body.failedRows : [];
+  const { v4: uuidv4 } = require("uuid");
   const canManageAllPolicies = isAdminRequest(req);
+  // ✅ Generate a unique session ID for this import batch
+  const importSessionId = uuidv4();
 
-  if (!Array.isArray(policies) || policies.length === 0) {
-    return res.status(400).json({ success: false, message: "You must upload at least one policy." });
+  if (policies.length === 0 && failedRowsFromClient.length === 0) {
+    return res.status(400).json({ success: false, message: "You must upload at least one policy row." });
   }
 
   const insertedRows = [];
-  const updatedRows = []; // Track updates separately
+  const updatedRows = [];
   const skippedRows = [];
 
-  for (let i = 0; i < policies.length; i++) {
+  // ✅ Helper: persist every failure to the failed_imports table
+  const logFailure = async (rowNumber, data, reason) => {
     try {
-      let { policy_number, plate, owner, company, start_date, expiry_date, contact } = policies[i];
+      const payloadRowNumber = Number(data?.row_number ?? data?.row);
+      const resolvedRowNumber = Number.isInteger(payloadRowNumber) && payloadRowNumber > 0
+        ? payloadRowNumber
+        : (Number.isInteger(rowNumber) && rowNumber > 1 ? rowNumber : rowNumber + 2);
+
+      await query(
+        `INSERT INTO failed_imports
+          (created_by, import_session_id, row_number, policy_number, plate, owner,
+           company, contact, start_date, expiry_date, reason)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          req.session.userId,
+          importSessionId,
+          resolvedRowNumber,
+          data?.policy_number ? String(data.policy_number).trim() : null,
+          data?.plate ? String(data.plate).trim() : null,
+          data?.owner ? String(data.owner).trim() : null,
+          data?.company ? String(data.company).trim() : null,
+          data?.contact ? String(data.contact).trim() : null,
+          normalizeImportDate(data?.start_date),
+          normalizeImportDate(data?.expiry_date),
+          reason,
+        ]
+      );
+    } catch (e) {
+      console.error("Failed to log import failure:", e.message);
+    }
+  };
+
+  for (let i = 0; i < failedRowsFromClient.length; i++) {
+    const failure = failedRowsFromClient[i] || {};
+    const rowNumber = getImportRowNumber(failure, i);
+    const data = failure.data || failure;
+    const reason = String(failure.reason || "Validation error").trim();
+
+    skippedRows.push({ row: rowNumber, reason, data });
+    await logFailure(rowNumber, data, reason);
+  }
+
+  for (let i = 0; i < policies.length; i++) {
+    const currentPolicy = policies[i] || {};
+    const rowNumber = getImportRowNumber(currentPolicy, i);
+    currentPolicy.row_number = rowNumber;
+
+    try {
+      let { policy_number, plate, owner, company, start_date, expiry_date, contact } = currentPolicy;
 
       const cleanPolicyNumber = policy_number?.trim();
       const cleanPlate = plate?.trim() || "⛔ Please Update";
       const cleanOwner = owner?.trim();
       const cleanCompany = company?.trim().toUpperCase();
+      const normalizedStartDate = normalizeImportDate(start_date);
+      const normalizedExpiryDate = normalizeImportDate(expiry_date);
       const cleanContact = formatRwandaNumber(contact);
 
-      // 1. Validation Logic (Keep this as is)
+      const rowErrors = [];
       const missingFields = [];
       if (!cleanPolicyNumber) missingFields.push("policy_number");
-      if (!cleanPlate) missingFields.push("plate");
       if (!cleanOwner) missingFields.push("owner");
       if (!cleanCompany) missingFields.push("company");
       if (!start_date) missingFields.push("start_date");
       if (!expiry_date) missingFields.push("expiry_date");
-      if (!cleanContact) missingFields.push("contact");
+      if (!String(contact || "").trim()) missingFields.push("contact");
+      if (missingFields.length > 0) rowErrors.push(`Missing: ${missingFields.join(", ")}`);
+      if (start_date && !normalizedStartDate) rowErrors.push("invalid start_date format");
+      if (expiry_date && !normalizedExpiryDate) rowErrors.push("invalid expiry_date format");
+      if (cleanContact && !isValidRwandaNumber(cleanContact)) {
+        rowErrors.push("invalid contact number (use 07xxxxxxxx or +2507xxxxxxxx)");
+      }
 
-      if (missingFields.length > 0) {
-        skippedRows.push({ row: i + 1, reason: `Missing: ${missingFields.join(", ")}`, data: policies[i] });
+      if (rowErrors.length > 0) {
+        const reason = rowErrors.join(" | ");
+        skippedRows.push({ row: rowNumber, reason, data: currentPolicy });
+        await logFailure(i, policies[i], reason); // ✅ persist
         continue;
       }
 
-      // 2. Check if the policy number already exists
       const existing = await query(
         "SELECT id, created_by FROM policies WHERE policy_number = ? LIMIT 1",
         [cleanPolicyNumber]
@@ -2187,11 +2395,9 @@ app.post("/policies/import", isAuthenticated, async (req, res) => {
 
       if (existing.length > 0) {
         if (!canManageAllPolicies && existing[0].created_by !== req.session.userId) {
-          skippedRows.push({
-            row: i + 1,
-            reason: `Policy number ${cleanPolicyNumber} already belongs to another user`,
-            data: policies[i]
-          });
+          const reason = `Policy number ${cleanPolicyNumber} already belongs to another user`;
+          skippedRows.push({ row: rowNumber, reason, data: currentPolicy });
+          await logFailure(i, policies[i], reason); // ✅ persist
           continue;
         }
 
@@ -2200,41 +2406,125 @@ app.post("/policies/import", isAuthenticated, async (req, res) => {
           `UPDATE policies 
            SET plate = ?, owner = ?, company = ?, start_date = ?, expiry_date = ?, contact = ?
            WHERE policy_number = ?`,
-          [cleanPlate, cleanOwner, cleanCompany, start_date, expiry_date, cleanContact, cleanPolicyNumber]
+          [cleanPlate, cleanOwner, cleanCompany, normalizedStartDate, normalizedExpiryDate, cleanContact, cleanPolicyNumber]
         );
-        updatedRows.push({ row: i + 1, policy_number: cleanPolicyNumber, status: "updated" });
+        updatedRows.push({ row: rowNumber, policy_number: cleanPolicyNumber, status: "updated" });
+
       } else {
         // ----- INSERT NEW POLICY -----
         const result = await query(
-          `
-            INSERT INTO policies
-              (created_by, policy_number, plate, owner, company, start_date, expiry_date, contact)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `,
-          [req.session.userId, cleanPolicyNumber, cleanPlate, cleanOwner, cleanCompany, start_date, expiry_date, cleanContact]
+          `INSERT INTO policies
+            (created_by, policy_number, plate, owner, company, start_date, expiry_date, contact)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [req.session.userId, cleanPolicyNumber, cleanPlate, cleanOwner, cleanCompany, normalizedStartDate, normalizedExpiryDate, cleanContact]
         );
-        insertedRows.push({ row: i + 1, id: result.insertId, policy_number: cleanPolicyNumber });
+        insertedRows.push({ row: rowNumber, id: result.insertId, policy_number: cleanPolicyNumber });
       }
 
     } catch (err) {
-      skippedRows.push({ row: i + 1, reason: "Database error: " + err.message, data: policies[i] });
+      const reason = `Database error: ${err.message}`;
+      skippedRows.push({ row: rowNumber, reason, data: currentPolicy });
+      await logFailure(i, policies[i], reason); // ✅ persist
     }
   }
 
-  // 3. Build a smart summary message
   const totalProcessed = insertedRows.length + updatedRows.length;
-  let summary = `Processed ${totalProcessed} policies. (${insertedRows.length} new, ${updatedRows.length} updated).`;
-  if (skippedRows.length > 0) summary += ` ${skippedRows.length} rows skipped.`;
+  const skippedLabel = `${skippedRows.length} row${skippedRows.length === 1 ? "" : "s"} skipped.`;
+  let summary = totalProcessed > 0
+    ? `Processed ${totalProcessed} policies. (${insertedRows.length} new, ${updatedRows.length} updated).`
+    : "No policies were imported.";
+  if (skippedRows.length > 0) summary += ` ${skippedLabel}`;
 
   res.json({
     success: true,
-    message: summary,
-    totalRows: policies.length,
+    message: summary.trim(),
+    importSessionId,  // ✅ returned so frontend can filter by this batch
+    totalRows: policies.length + failedRowsFromClient.length,
     inserted: insertedRows.length,
     updated: updatedRows.length,
     skipped: skippedRows.length,
-    skippedRows
+    skippedRows,
   });
+});
+const fetchFailedImportsForRequest = async (req, sessionId = "") => {
+  const scope = getPolicyScope(req);
+  const conditions = [];
+  const params = [];
+
+  if (sessionId) {
+    conditions.push("import_session_id = ?");
+    params.push(sessionId);
+  }
+
+  if (scope.condition) {
+    conditions.push(scope.condition);
+    params.push(...scope.params);
+  }
+
+  return query(
+    `SELECT
+      id,
+      import_session_id,
+      row_number,
+      policy_number,
+      plate,
+      owner,
+      company,
+      contact,
+      DATE_FORMAT(start_date, '%d-%m-%Y') AS start_date,
+      DATE_FORMAT(expiry_date, '%d-%m-%Y') AS expiry_date,
+      reason,
+      created_at
+    FROM failed_imports
+    ${buildWhereClause(...conditions)}
+    ORDER BY created_at DESC, row_number ASC`,
+    params
+  );
+};
+
+app.get("/api/failed-imports", isAuthenticated, async (req, res) => {
+  try {
+    const sessionId = String(req.query.session_id || req.query.sessionId || "").trim();
+    const rows = await fetchFailedImportsForRequest(req, sessionId);
+    res.json({ failed: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fetch failed imports for a specific session
+app.get("/failed-imports/:sessionId", isAuthenticated, async (req, res) => {
+  try {
+    const rows = await fetchFailedImportsForRequest(req, req.params.sessionId);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE a single failed import record
+app.delete("/api/failed-imports/:id", isAuthenticated, async (req, res) => {
+  try {
+    const scope = getPolicyScope(req);
+    await query(
+      `DELETE FROM failed_imports ${buildWhereClause("id = ?", scope.condition)}`,
+      [req.params.id, ...scope.params]
+    );
+    res.json({ message: "Record removed" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE all failed imports for current user (or all for admin)
+app.delete("/api/failed-imports", isAdmin, async (req, res) => {
+  try {
+    await query("DELETE FROM failed_imports");
+    await query("ALTER TABLE failed_imports AUTO_INCREMENT = 1");
+    res.json({ message: "All failed import records cleared" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 // --- ADVERTISEMENT SYSTEM API ---
 
@@ -2277,6 +2567,20 @@ app.get("/api/ads", isAuthenticated, async (req, res) => {
     const ads = await query(
       `SELECT * FROM advertisements ${buildWhereClause(scope.condition)} ORDER BY created_at DESC`,
       scope.params
+    );
+    res.json(ads);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch ads" });
+  }
+});
+app.get("/api/ads/public", async (req, res) => {
+  try {
+    const ads = await query(
+      `SELECT id, company_name, ad_type, media_url, title, cta_text, target_url, is_active, created_at
+       FROM advertisements
+       WHERE is_active = 1
+       ORDER BY created_at DESC`
     );
     res.json(ads);
   } catch (err) {
@@ -2422,6 +2726,16 @@ app.get("/api/admin/user-activities", isAdmin, async (req, res) => {
       error: err.message
     });
   }
+});
+
+app.use((err, req, res, next) => {
+  if (err?.type === "entity.too.large") {
+    return res.status(413).json({
+      error: "Import payload is too large. Split the file into smaller batches and try again.",
+    });
+  }
+
+  return next(err);
 });
 
 //===================== START SERVER ========================

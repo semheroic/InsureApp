@@ -214,7 +214,30 @@ CREATE TABLE IF NOT EXISTS failed_imports (
 
 
 -- ============================================================
--- 10. USER ACTIVITY LOGS
+-- 10. CHAT MESSAGES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id           INT       NOT NULL AUTO_INCREMENT,
+  sender_id    INT       NOT NULL,
+  recipient_id INT       NOT NULL,
+  message      TEXT      NOT NULL,
+  is_read      TINYINT(1) NOT NULL DEFAULT 0,
+  read_at      DATETIME  DEFAULT NULL,
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  KEY idx_chat_messages_sender (sender_id),
+  KEY idx_chat_messages_recipient (recipient_id),
+  KEY idx_chat_messages_pair_time (sender_id, recipient_id, created_at),
+  CONSTRAINT fk_chat_messages_sender FOREIGN KEY (sender_id)
+    REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_chat_messages_recipient FOREIGN KEY (recipient_id)
+    REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ============================================================
+-- 11. USER ACTIVITY LOGS
 --    Required by logUserActivity() called on:
 --    login, logout, delete user, bulk delete policies
 -- ============================================================

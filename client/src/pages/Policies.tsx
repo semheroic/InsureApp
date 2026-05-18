@@ -314,7 +314,7 @@ const Policies = () => {
   const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
   const [bulkMessage, setBulkMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const getPolicyReference = (policy: Pick<Policy, "policy_number" | "plate">) => policy.policy_number || policy.plate || "N/A";
+  const getPolicyReference = (policy: Pick<Policy, "policy_number" | "plate">) => policy.plate || policy.policy_number || "N/A";
 
   const roleClean = userRole?.toLowerCase();
   const isAdmin = contextIsAdmin;
@@ -364,7 +364,10 @@ const [originalDates, setOriginalDates] = useState<{
       const today = new Date();
       const searchLower = searchQuery.toLowerCase().trim();
       let matchesSearch = !searchQuery || [p.policy_number, p.plate, p.owner, p.company].some(v => v.toLowerCase().includes(searchLower));
-      let matchesStatus = statusFilter === "all" || p.status.toLowerCase().replace(/\s+/g, "") === statusFilter;
+      const normalizedStatus = p.status.toLowerCase().replace(/\s+/g, "");
+      let matchesStatus = statusFilter === "all"
+        || normalizedStatus === statusFilter
+        || (statusFilter === "active" && normalizedStatus === "renewed");
       let matchesCompany = companyFilter === "all" || p.company.toLowerCase() === companyFilter;
       let matchesUser = userFilter === "all" || p.created_by === Number(userFilter);
       let matchesQuickDate = true;
@@ -413,10 +416,10 @@ const counts = useMemo(() => {
     if (isWithinInterval(start, { start: startOfMonth(today), end: endOfMonth(today) })) monthlyCount++;
 
     // ----- Status -----
-    if (p.status === "Active") byStatus.active++;
+    if (p.status === "Active" || p.status === "Renewed") byStatus.active++;
     else if (p.status === "Expiring Soon") byStatus.expiring++;
     else if (p.status === "Expired") byStatus.expired++;
-    else if (p.status === "Renewed") byStatus.renewed++;
+    if (p.status === "Renewed") byStatus.renewed++;
 
     // ----- Company -----
     const company = p.company.toLowerCase();
@@ -1424,7 +1427,7 @@ const getUserName = (userId?: number | null) => {
       <AlertDialogDescription className="text-slate-500 mt-2">
         This action cannot be undone. You are about to permanently remove the policy for 
         <span className="block mt-1 font-bold text-slate-900">
-          Policy: {selectedPolicy ? getPolicyReference(selectedPolicy) : ""}
+          Plate: {selectedPolicy ? getPolicyReference(selectedPolicy) : ""}
         </span>
       </AlertDialogDescription>
     </AlertDialogHeader>

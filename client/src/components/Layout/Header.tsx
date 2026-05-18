@@ -22,6 +22,16 @@ import { useActivityScope } from "@/contexts/ActivityScopeContext";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const SESSION_DURATION_HOURS = 8;
+const formatInboxMessage = (value: string) => {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .replace(/Policy\s+[^(]+\s+\(Plate:\s*([^,]+),\s*Owner:\s*([^)]+)\)/gi, "Plate $1 ($2)")
+    .replace(/Policy\s+[^(]+\s+\(([^)—-]+)\s+[—-]\s+([^)]+)\)/gi, "Plate $1 ($2)")
+    .replace(/insurance policy\s+[^(]+\s+\(([^)]+)\)/gi, "insurance for plate $1");
+};
 
 export const Header = () => {
   const navigate = useNavigate();
@@ -353,7 +363,7 @@ export const Header = () => {
                     <div className="p-4 md:p-6 space-y-4">
                       <div className="bg-primary/[0.03] border border-primary/10 p-4 md:p-6 rounded-[15px] md:rounded-[20px] rounded-tl-none">
                         <p className="text-sm md:text-[15px] leading-relaxed whitespace-pre-wrap">
-                          {selectedLog.message}
+                          {formatInboxMessage(selectedLog.message)}
                         </p>
                         <div className="flex justify-between items-end mt-4">
                           {notificationSection === "sms" && (
@@ -462,7 +472,7 @@ export const Header = () => {
                                   {n.title || n.phone_number || n.activity_type || "Notification"}
                                 </p>
                                 <p className="text-[9px] text-muted-foreground truncate max-w-[150px]">
-                                  {n.message}
+                                  {formatInboxMessage(n.message)}
                                 </p>
                               </div>
                             </div>

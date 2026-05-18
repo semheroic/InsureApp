@@ -5,9 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useActivityScope } from "@/contexts/ActivityScopeContext";
-import { useLocation, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Table,
   TableHeader,
@@ -115,14 +122,18 @@ const StatCard = ({ label, value, colorClass, Icon }) => (
 const FailedImportsTable = ({ sessionId: sessionIdProp = null }) => {
   const { sessionId: routeSessionId } = useParams();
   const location = useLocation();
-  const sessionId = sessionIdProp ?? routeSessionId ?? location.state?.importSessionId ?? null;
+  const navigate = useNavigate();
+  const initialSessionId = String(
+    sessionIdProp ?? routeSessionId ?? location.state?.importSessionId ?? "all"
+  );
   const { toast } = useToast();
   const { isAdmin } = useActivityScope();
 
-  const [rows, setRows]               = useState([]);
+  const [allRows, setAllRows]         = useState([]);
   const [loading, setLoading]         = useState(true);
   const [filter, setFilter]           = useState("all");
   const [search, setSearch]           = useState("");
+  const [selectedSessionId, setSelectedSessionId] = useState(initialSessionId);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -138,9 +149,8 @@ const FailedImportsTable = ({ sessionId: sessionIdProp = null }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params = sessionId ? { session_id: sessionId } : {};
-      const { data } = await axios.get(`${BASE}/api/failed-imports`, { params });
-      setRows(data.failed || []);
+      const { data } = await axios.get(`${BASE}/api/failed-imports`);
+      setAllRows(data.failed || []);
     } catch (err) {
       toast({
         title: "Failed to load",
@@ -150,9 +160,61 @@ const FailedImportsTable = ({ sessionId: sessionIdProp = null }) => {
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [toast]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { setSelectedSessionId(initialSessionId); }, [initialSessionId]);
+
+  const sessionSummaries = useMemo(() => {
+    const grouped = new Map();
+
+    allRows.forEach((row) => {
+      const id = row.import_session_id || "unknown";
+      const existing = grouped.get(id);
+
+      if (existing) {
+        existing.count += 1;
+        if (new Date(row.created_at).getTime() > new Date(existing.latestAt).getTime()) {
+          existing.latestAt = row.created_at;
+        }
+        return;
+      }
+
+      grouped.set(id, {
+        id,
+        count: 1,
+        latestAt: row.created_at,
+      });
+    });
+
+    return Array.from(grouped.values()).sort(
+      (left, right) => new Date(right.latestAt).getTime() - new Date(left.latestAt).getTime()
+    );
+  }, [allRows]);
+
+  const rows = useMemo(() => {
+    if (selectedSessionId === "all") {
+      return allRows;
+    }
+
+    return allRows.filter(row => row.import_session_id === selectedSessionId);
+  }, [allRows, selectedSessionId]);
+
+  const selectedSessionSummary = useMemo(
+    () => sessionSummaries.find(session => session.id === selectedSessionId) || null,
+    [selectedSessionId, sessionSummaries]
+  );
+
+  useEffect(() => {
+    if (loading || selectedSessionId === "all") {
+      return;
+    }
+
+    if (!selectedSessionSummary) {
+      setSelectedSessionId("all");
+      navigate("/failed-imports", { replace: true });
+    }
+  }, [loading, selectedSessionId, selectedSessionSummary, navigate]);
 
   /* ── STATS ── */
   const stats = useMemo(() => {
@@ -189,7 +251,21 @@ const FailedImportsTable = ({ sessionId: sessionIdProp = null }) => {
   const totalPages = Math.ceil(filtered.length / itemsPerPage) || 1;
 
   /* Reset to page 1 when filters change */
-  useEffect(() => { setCurrentPage(1); }, [filter, search]);
+  useEffect(() => { setCurrentPage(1); }, [filter, search, selectedSessionId]);
+
+  const handleSessionChange = (value) => {
+    setSelectedSessionId(value);
+
+    if (value === "all") {
+      navigate("/failed-imports", { replace: true });
+      return;
+    }
+
+    navigate(`/failed-imports/${value}`, {
+      replace: true,
+      state: { importSessionId: value },
+    });
+  };
 
   /* ── DELETE ONE ── */
   const handleDelete = async () => {
@@ -197,7 +273,7 @@ const FailedImportsTable = ({ sessionId: sessionIdProp = null }) => {
     setIsDeleting(true);
     try {
       await axios.delete(`${BASE}/api/failed-imports/${selectedRow.id}`);
-      setRows(prev => prev.filter(r => r.id !== selectedRow.id));
+      setAllRows(prev => prev.filter(r => r.id !== selectedRow.id));
       setIsDeleteOpen(false);
       setSelectedRow(null);
       toast({ title: "Record removed", description: "Failed import entry deleted." });
@@ -213,8 +289,10 @@ const FailedImportsTable = ({ sessionId: sessionIdProp = null }) => {
     setIsDeleting(true);
     try {
       await axios.delete(`${BASE}/api/failed-imports`);
-      setRows([]);
+      setAllRows([]);
       setIsClearAllOpen(false);
+      setSelectedSessionId("all");
+      navigate("/failed-imports", { replace: true });
       toast({ title: "Cleared", description: "All failed import records removed." });
     } catch {
       toast({ title: "Error", description: "Could not clear records", variant: "destructive" });
@@ -245,6 +323,9 @@ const FailedImportsTable = ({ sessionId: sessionIdProp = null }) => {
           <h1 className="text-3xl font-bold">Failed Imports</h1>
           <p className="text-muted-foreground">
             Review and resolve policies that failed during CSV import
+            {selectedSessionId !== "all" && selectedSessionSummary
+              ? ` for batch ...${selectedSessionSummary.id.slice(-8)}`
+              : ""}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -292,6 +373,42 @@ const FailedImportsTable = ({ sessionId: sessionIdProp = null }) => {
       </div>
 
       <Card className="p-4 sm:p-6">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 mb-6 items-end">
+          <div className="space-y-2 xl:col-span-2">
+            <Label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              Import Session
+            </Label>
+            <Select value={selectedSessionId} onValueChange={handleSessionChange}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select import batch" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sessions ({allRows.length})</SelectItem>
+                {sessionSummaries.map((session) => (
+                  <SelectItem key={session.id} value={session.id}>
+                    {`...${session.id.slice(-8)} | ${session.count} row${session.count === 1 ? "" : "s"} | ${fmtDate(session.latestAt)}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="rounded-xl border border-border bg-muted/30 px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Current Batch</p>
+            <p className="mt-1 text-sm font-semibold">
+              {selectedSessionId === "all"
+                ? "All recorded import sessions"
+                : selectedSessionSummary
+                  ? `...${selectedSessionSummary.id.slice(-8)}`
+                  : "Selected batch"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {selectedSessionId === "all"
+                ? `${sessionSummaries.length} session${sessionSummaries.length === 1 ? "" : "s"} available`
+                : `${rows.length} failed row${rows.length === 1 ? "" : "s"} in this batch`}
+            </p>
+          </div>
+        </div>
 
         {/* ── FILTER TABS ── */}
         <div className="flex flex-wrap gap-2 mb-5">

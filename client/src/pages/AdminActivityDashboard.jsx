@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { useChatLauncher } from "@/contexts/ChatLauncherContext";
 
 import {
   ActivitySquare,
@@ -20,6 +21,7 @@ function AdminActivityDashboard() {
   const [summary, setSummary] = useState({});
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { openChat } = useChatLauncher();
 
   // PAGINATION
   const [currentPage, setCurrentPage] = useState(1);
@@ -123,8 +125,8 @@ function AdminActivityDashboard() {
   }
 
   return (
-
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 p-6 transition-colors duration-300">
+    <>
+      <div className="min-h-screen bg-slate-100 dark:bg-slate-950 p-6 transition-colors duration-300">
 
       {/* HEADER */}
 
@@ -142,13 +144,27 @@ function AdminActivityDashboard() {
 
         </div>
 
-        <div className="mt-4 md:mt-0 flex items-center gap-2 bg-white dark:bg-slate-900 px-4 py-2 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
+        <div className="mt-4 md:mt-0 flex items-center gap-3">
 
-          <ShieldCheck className="text-emerald-500" size={18} />
+          <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-4 py-2 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
 
-          <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-            Secure Admin Environment
-          </span>
+            <ShieldCheck className="text-emerald-500" size={18} />
+
+            <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
+              Secure Admin Environment
+            </span>
+
+          </div>
+
+          <button
+            onClick={openChat}
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 dark:bg-cyan-400 dark:hover:bg-cyan-300 text-white dark:text-slate-950 px-4 py-2 rounded-2xl transition-all text-sm font-semibold shadow-sm"
+          >
+
+            <MessagesSquare size={16} />
+            Chat Now
+
+          </button>
 
         </div>
 
@@ -453,8 +469,8 @@ function AdminActivityDashboard() {
         )}
 
       </div>
-
-    </div>
+      </div>
+    </>
   );
 }
 

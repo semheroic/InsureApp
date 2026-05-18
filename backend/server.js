@@ -11,10 +11,12 @@ const MySQLStore = require("express-mysql-session")(session);
 const Africastalking = require("africastalking");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
+const http = require("http");
 const util = require("util");
 const cron = require("node-cron");
 const multer = require("multer");
 const path = require("path");
+const { WebSocketServer } = require("ws");
 const app = express();
 const REQUEST_BODY_LIMIT = "25mb";
 // ---------------- Multer setup for profile pictures ----------------
@@ -35,13 +37,11 @@ const allowedOrigins = [
   "http://localhost:8080"
 ];
 
+const isAllowedOrigin = origin => !origin || allowedOrigins.includes(origin);
+
 app.use(cors({
   origin: function (origin, callback) {
-
-    // allow server-to-server or curl requests
-    if (!origin) return callback(null, true);
-
-    if (allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
 
@@ -92,7 +92,7 @@ const sessionStore = new MySQLStore(
 );
 app.set("trust proxy", 1); 
 
-app.use(session({
+const sessionMiddleware = session({
   key: "insureapp_session",
   secret: process.env.SESSION_SECRET,
   store: sessionStore,
@@ -104,7 +104,8 @@ app.use(session({
     secure: isProduction,   // secure only in production
     sameSite: isProduction ? "none" : "lax"
   }
-}));
+});
+app.use(sessionMiddleware);
 
 
 // ======================== EMAIL ========================
@@ -391,6 +392,163 @@ const createNotification = async ({
   } catch (err) {
     console.error("Notification insert error:", err);
   }
+};
+
+const CHAT_SOCKET_PATH = "/chat";
+const CHAT_MESSAGE_MAX_LENGTH = 2000;
+const POLICY_IMPORT_FIELDS = ["plate", "owner", "company", "start_date", "expiry_date", "contact"];
+const activeChatConnections = new Map();
+
+const normalizeCompanyName = value => String(value || "").trim().toUpperCase();
+const normalizeTextValue = value => String(value || "").trim();
+const normalizeChatMessage = value => String(value || "").replace(/\r\n/g, "\n").trim();
+const getPolicyReferenceText = (policyNumber, plate) => {
+  const cleanPlate = normalizeTextValue(plate);
+  if (cleanPlate) {
+    return `plate ${cleanPlate}`;
+  }
+
+  const cleanPolicyNumber = normalizeTextValue(policyNumber);
+  if (cleanPolicyNumber) {
+    return `policy ${cleanPolicyNumber}`;
+  }
+
+  return "this policy";
+};
+const getPolicyHeadlineText = (policyNumber, plate) => {
+  const cleanPlate = normalizeTextValue(plate);
+  if (cleanPlate) {
+    return `Plate ${cleanPlate}`;
+  }
+
+  const cleanPolicyNumber = normalizeTextValue(policyNumber);
+  if (cleanPolicyNumber) {
+    return `Policy ${cleanPolicyNumber}`;
+  }
+
+  return "This policy";
+};
+
+const getPolicyComparableSnapshot = row => ({
+  plate: normalizeTextValue(row?.plate),
+  owner: normalizeTextValue(row?.owner),
+  company: normalizeCompanyName(row?.company),
+  start_date: normalizeImportDate(row?.start_date) || "",
+  expiry_date: normalizeImportDate(row?.expiry_date) || "",
+  contact: formatRwandaNumber(row?.contact) || "",
+});
+
+const getPolicyFieldChanges = (currentPolicy, nextPolicy) =>
+  POLICY_IMPORT_FIELDS.filter(field => currentPolicy[field] !== nextPolicy[field]);
+
+const hasPolicyDateChanges = changedFields =>
+  changedFields.includes("start_date") || changedFields.includes("expiry_date");
+
+const insertRenewalHistory = async ({ policyId, actorUserId = null, previousExpiryDate, renewedDate }) => {
+  if (!policyId || !previousExpiryDate || !renewedDate) {
+    return;
+  }
+
+  await query(
+    `
+      INSERT INTO policy_history (policy_id, created_by, expiry_date, renewed_date)
+      VALUES (?, ?, ?, ?)
+    `,
+    [policyId, actorUserId, previousExpiryDate, renewedDate]
+  );
+};
+
+const updatePolicyFromSnapshot = async (policyId, snapshot) => {
+  await query(
+    `
+      UPDATE policies
+      SET plate = ?, owner = ?, company = ?, start_date = ?, expiry_date = ?, contact = ?, updated_at = NOW()
+      WHERE id = ?
+    `,
+    [
+      snapshot.plate,
+      snapshot.owner,
+      snapshot.company,
+      snapshot.start_date,
+      snapshot.expiry_date,
+      snapshot.contact,
+      policyId,
+    ]
+  );
+};
+
+const getChatConnectionSet = userId => {
+  const key = String(userId);
+  if (!activeChatConnections.has(key)) {
+    activeChatConnections.set(key, new Set());
+  }
+
+  return activeChatConnections.get(key);
+};
+
+const getOnlineChatUserIds = () =>
+  Array.from(activeChatConnections.entries())
+    .filter(([, sockets]) => sockets.size > 0)
+    .map(([userId]) => Number(userId));
+
+const sendSocketPayload = (socket, payload) => {
+  if (socket.readyState === 1) {
+    socket.send(JSON.stringify(payload));
+  }
+};
+
+const sendChatEventToUser = (userId, payload) => {
+  const sockets = activeChatConnections.get(String(userId));
+  if (!sockets?.size) {
+    return;
+  }
+
+  for (const socket of sockets) {
+    sendSocketPayload(socket, payload);
+  }
+};
+
+const broadcastChatPresence = (userId, online) => {
+  const payload = {
+    type: "chat:presence",
+    userId: Number(userId),
+    online,
+    onlineUserIds: getOnlineChatUserIds(),
+  };
+
+  for (const sockets of activeChatConnections.values()) {
+    for (const socket of sockets) {
+      sendSocketPayload(socket, payload);
+    }
+  }
+};
+
+const fetchChatMessageById = async messageId => {
+  const rows = await query(
+    `
+      SELECT
+        m.id,
+        m.sender_id,
+        m.recipient_id,
+        m.message,
+        m.is_read,
+        DATE_FORMAT(m.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
+        DATE_FORMAT(m.updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at,
+        DATE_FORMAT(m.read_at, '%Y-%m-%d %H:%i:%s') AS read_at,
+        s.name AS sender_name,
+        s.profile_picture AS sender_profile_picture,
+        r.name AS recipient_name,
+        r.profile_picture AS recipient_profile_picture
+      FROM chat_messages m
+      JOIN users s ON s.id = m.sender_id
+      JOIN users r ON r.id = m.recipient_id
+      WHERE m.id = ?
+      LIMIT 1
+    `,
+    [messageId]
+  );
+
+  return rows[0] || null;
 };
 
 // ======================== TABLES ========================
@@ -688,6 +846,62 @@ async function ensureTables() {
     CONSTRAINT fk_notifications_recipient_id FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_notifications_policy_id FOREIGN KEY (policy_id) REFERENCES policies(id) ON DELETE SET NULL
   )`);
+  await query(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      sender_id INT NOT NULL,
+      recipient_id INT NOT NULL,
+      message TEXT NOT NULL,
+      is_read TINYINT(1) NOT NULL DEFAULT 0,
+      read_at DATETIME DEFAULT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_chat_messages_sender (sender_id),
+      KEY idx_chat_messages_recipient (recipient_id),
+      KEY idx_chat_messages_pair_time (sender_id, recipient_id, created_at),
+      CONSTRAINT fk_chat_messages_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+      CONSTRAINT fk_chat_messages_recipient FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB
+  `);
+
+  if (!(await hasColumn("chat_messages", "read_at"))) {
+    await query("ALTER TABLE chat_messages ADD COLUMN read_at DATETIME NULL AFTER is_read");
+  }
+
+  if (!(await hasColumn("chat_messages", "updated_at"))) {
+    await query(
+      "ALTER TABLE chat_messages ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at"
+    );
+  }
+
+  if (!(await hasIndex("chat_messages", "idx_chat_messages_sender"))) {
+    await query("ALTER TABLE chat_messages ADD INDEX idx_chat_messages_sender (sender_id)");
+  }
+
+  if (!(await hasIndex("chat_messages", "idx_chat_messages_recipient"))) {
+    await query("ALTER TABLE chat_messages ADD INDEX idx_chat_messages_recipient (recipient_id)");
+  }
+
+  if (!(await hasIndex("chat_messages", "idx_chat_messages_pair_time"))) {
+    await query("ALTER TABLE chat_messages ADD INDEX idx_chat_messages_pair_time (sender_id, recipient_id, created_at)");
+  }
+
+  if (!(await hasForeignKey("chat_messages", "fk_chat_messages_sender"))) {
+    await query(`
+      ALTER TABLE chat_messages
+      ADD CONSTRAINT fk_chat_messages_sender
+      FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+    `);
+  }
+
+  if (!(await hasForeignKey("chat_messages", "fk_chat_messages_recipient"))) {
+    await query(`
+      ALTER TABLE chat_messages
+      ADD CONSTRAINT fk_chat_messages_recipient
+      FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+    `);
+  }
+
   await query(`
   CREATE TABLE IF NOT EXISTS policy_history (
     id INT(11) NOT NULL AUTO_INCREMENT,
@@ -1181,11 +1395,11 @@ app.delete("/users/:id", isAdmin, async (req, res) => {
   }
 });
 // ======================== POLICIES CRUD + SMS ========================
+// ======================== GET ALL POLICIES ========================
 app.get("/policies", isAuthenticated, async (req, res) => {
   try {
     const scope = getPolicyScope(req, "p");
 
-    // Handle userId query parameter for admin viewing specific user's policies
     let additionalCondition = "";
     let additionalParams = [];
 
@@ -1205,26 +1419,15 @@ app.get("/policies", isAuthenticated, async (req, res) => {
         DATE_FORMAT(p.expiry_date, '%d-%m-%Y') AS expiry_date,
         p.contact,
         p.created_by,
-
         CASE
-          -- ✅ RENEWED: policy has been renewed (date changed)
-          WHEN EXISTS (
-            SELECT 1
-            FROM policy_history ph
-            WHERE ph.policy_id = p.id
-              AND ph.renewed_date IS NOT NULL
-          ) THEN 'Renewed'
-
-          -- ❌ EXPIRED (check first!)
-          WHEN DATEDIFF(p.expiry_date, CURDATE()) < 0 THEN 'Expired'
-
-          -- ⚠️ EXPIRING SOON (next 3 days)
+          WHEN DATEDIFF(p.expiry_date, CURDATE()) < 0  THEN 'Expired'
           WHEN DATEDIFF(p.expiry_date, CURDATE()) <= 3 THEN 'Expiring Soon'
-
-          -- ✅ ACTIVE
+          WHEN EXISTS (
+            SELECT 1 FROM policy_history ph
+            WHERE ph.policy_id = p.id AND ph.renewed_date IS NOT NULL
+          ) THEN 'Renewed'
           ELSE 'Active'
         END AS status
-
       FROM policies p
       ${buildWhereClause(scope.condition, additionalCondition)}
       ORDER BY p.expiry_date ASC
@@ -1253,8 +1456,12 @@ app.get("/policies/:id", isAuthenticated, async (req, res) => {
       created_at,
       updated_at,
       CASE
-        WHEN DATEDIFF(expiry_date, CURDATE()) < 0 THEN 'Expired'
+        WHEN DATEDIFF(expiry_date, CURDATE()) < 0  THEN 'Expired'
         WHEN DATEDIFF(expiry_date, CURDATE()) <= 3 THEN 'Expiring Soon'
+        WHEN EXISTS (
+          SELECT 1 FROM policy_history ph
+          WHERE ph.policy_id = policies.id AND ph.renewed_date IS NOT NULL
+        ) THEN 'Renewed'
         ELSE 'Active'
       END AS status
     FROM policies
@@ -1275,7 +1482,7 @@ app.post("/policies", isAuthenticated, async (req, res) => {
     const cleanPolicyNumber = policy_number?.trim();
     const cleanPlate = plate?.trim() || " ⛔ Please Update";
     const cleanOwner = owner?.trim();
-    const cleanCompany = company?.trim();
+    const cleanCompany = normalizeCompanyName(company);
     const normalizedStartDate = normalizeImportDate(start_date);
     const normalizedExpiryDate = normalizeImportDate(expiry_date);
     const cleanContact = formatRwandaNumber(contact);
@@ -1310,7 +1517,11 @@ app.post("/policies", isAuthenticated, async (req, res) => {
     const displayStartDate = formatDateForDisplay(normalizedStartDate);
     const displayExpiryDate = formatDateForDisplay(normalizedExpiryDate);
 
-    sendSMS(cleanContact, `Your insurance policy ${cleanPolicyNumber} runs from ${displayStartDate} to ${displayExpiryDate}.`, req.session.userId)
+    sendSMS(
+      cleanContact,
+      `Your insurance for ${getPolicyReferenceText(cleanPolicyNumber, cleanPlate)} runs from ${displayStartDate} to ${displayExpiryDate}.`,
+      req.session.userId
+    )
       .catch(console.error);
 
     await createNotification({
@@ -1318,7 +1529,7 @@ app.post("/policies", isAuthenticated, async (req, res) => {
       targetRole: "User",
       activityType: "POLICY_CREATED",
       title: "Policy Created",
-      message: `Policy ${cleanPolicyNumber} is active from ${displayStartDate} to ${displayExpiryDate}.`,
+      message: `${getPolicyHeadlineText(cleanPolicyNumber, cleanPlate)} is active from ${displayStartDate} to ${displayExpiryDate}.`,
       policyId: result.insertId,
     });
 
@@ -1338,7 +1549,7 @@ app.put("/policies/:id", isAuthenticated, async (req, res) => {
   const cleanPolicyNumber = policy_number?.trim();
   const cleanPlate = plate?.trim();
   const cleanOwner = owner?.trim();
-  const cleanCompany = company?.trim();
+  const cleanCompany = normalizeCompanyName(company);
   const cleanContact = formatRwandaNumber(contact);
   const scope = getPolicyScope(req);
 
@@ -1459,7 +1670,7 @@ app.delete("/policies/:id", isAdmin, async (req, res) => {
       targetRole: "User",
       activityType: "POLICY_DELETED",
       title: "Policy Deleted",
-      message: `Policy ${policy.policy_number} (Plate: ${policy.plate}, Owner: ${policy.owner}) has been permanently deleted by an administrator.`,
+      message: `${getPolicyHeadlineText(policy.policy_number, policy.plate)} (${policy.owner}) has been permanently deleted by an administrator.`,
       policyId: null, // policy is gone, don't reference it
     }).catch(console.error);
 
@@ -1477,7 +1688,7 @@ app.delete("/policies/:id", isAdmin, async (req, res) => {
     if (policy.contact) {
       sendSMS(
         policy.contact,
-        `Dear ${policy.owner}, your insurance policy ${policy.policy_number} has been removed from our system. Contact us for details.`,
+        `Dear ${policy.owner}, your insurance for ${getPolicyReferenceText(policy.policy_number, policy.plate)} has been removed from our system. Contact us for details.`,
         req.session.userId
       ).catch(console.error);
     }
@@ -1486,7 +1697,7 @@ app.delete("/policies/:id", isAdmin, async (req, res) => {
     logUserActivity(
       req.session.userId,
       "POLICY_DELETED",
-      `Admin deleted policy ${policy.policy_number} (Plate: ${policy.plate})`,
+      `Admin deleted ${getPolicyReferenceText(policy.policy_number, policy.plate)}`,
       req
     ).catch(console.error);
 
@@ -1504,31 +1715,23 @@ app.get("/api/summary", isAuthenticated, async (req, res) => {
       COUNT(*) AS created,
 
       SUM(CASE
-        WHEN EXISTS (
-          SELECT 1 FROM policy_history ph
-          WHERE ph.policy_id = p.id AND ph.renewed_date IS NOT NULL
-        ) THEN 1 ELSE 0
+        WHEN DATEDIFF(p.expiry_date, CURDATE()) > 3
+          AND EXISTS (
+            SELECT 1 FROM policy_history ph
+            WHERE ph.policy_id = p.id AND ph.renewed_date IS NOT NULL
+          ) THEN 1 ELSE 0
       END) AS renewed,
 
       SUM(CASE
-        WHEN NOT EXISTS (
-          SELECT 1 FROM policy_history ph
-          WHERE ph.policy_id = p.id AND ph.renewed_date IS NOT NULL
-        ) AND DATEDIFF(p.expiry_date, CURDATE()) > 3 THEN 1 ELSE 0
+        WHEN DATEDIFF(p.expiry_date, CURDATE()) > 3 THEN 1 ELSE 0
       END) AS active,
 
       SUM(CASE
-        WHEN NOT EXISTS (
-          SELECT 1 FROM policy_history ph
-          WHERE ph.policy_id = p.id AND ph.renewed_date IS NOT NULL
-        ) AND DATEDIFF(p.expiry_date, CURDATE()) BETWEEN 0 AND 3 THEN 1 ELSE 0
+        WHEN DATEDIFF(p.expiry_date, CURDATE()) BETWEEN 0 AND 3 THEN 1 ELSE 0
       END) AS expiring,
 
       SUM(CASE
-        WHEN NOT EXISTS (
-          SELECT 1 FROM policy_history ph
-          WHERE ph.policy_id = p.id AND ph.renewed_date IS NOT NULL
-        ) AND DATEDIFF(p.expiry_date, CURDATE()) < 0 THEN 1 ELSE 0
+        WHEN DATEDIFF(p.expiry_date, CURDATE()) < 0 THEN 1 ELSE 0
       END) AS expired
 
     FROM policies p
@@ -1544,24 +1747,19 @@ app.get("/api/trends", isAuthenticated, async (req, res) => {
       DATE_FORMAT(p.expiry_date, '%b %Y') AS month,
 
       SUM(CASE
-        WHEN EXISTS (
-          SELECT 1 FROM policy_history ph
-          WHERE ph.policy_id = p.id AND ph.renewed_date IS NOT NULL
-        ) THEN 1 ELSE 0
+        WHEN DATEDIFF(p.expiry_date, CURDATE()) > 3
+          AND EXISTS (
+            SELECT 1 FROM policy_history ph
+            WHERE ph.policy_id = p.id AND ph.renewed_date IS NOT NULL
+          ) THEN 1 ELSE 0
       END) AS renewed,
 
       SUM(CASE
-        WHEN NOT EXISTS (
-          SELECT 1 FROM policy_history ph
-          WHERE ph.policy_id = p.id AND ph.renewed_date IS NOT NULL
-        ) AND DATEDIFF(p.expiry_date, CURDATE()) > 3 THEN 1 ELSE 0
+        WHEN DATEDIFF(p.expiry_date, CURDATE()) > 3 THEN 1 ELSE 0
       END) AS active,
 
       SUM(CASE
-        WHEN NOT EXISTS (
-          SELECT 1 FROM policy_history ph
-          WHERE ph.policy_id = p.id AND ph.renewed_date IS NOT NULL
-        ) AND DATEDIFF(p.expiry_date, CURDATE()) < 0 THEN 1 ELSE 0
+        WHEN DATEDIFF(p.expiry_date, CURDATE()) < 0 THEN 1 ELSE 0
       END) AS expired,
 
       COUNT(*) AS total
@@ -1788,7 +1986,7 @@ cron.schedule("0 8 * * *", async () => {
           targetRole: "User",
           activityType: "POLICY_EXPIRED",
           title: "Policy Expired",
-          message: `Policy ${p.policy_number} (${p.plate} — ${p.owner}) expired on ${p.expiry_date}. Please renew it as soon as possible.`,
+          message: `${getPolicyHeadlineText(p.policy_number, p.plate)} (${p.owner}) expired on ${p.expiry_date}. Please renew it as soon as possible.`,
           policyId: p.id,
         });
 
@@ -1798,24 +1996,25 @@ cron.schedule("0 8 * * *", async () => {
           targetRole: "Admin",
           activityType: "POLICY_EXPIRED",
           title: "Policy Expired",
-          message: `Policy ${p.policy_number} (${p.plate} — ${p.owner}) expired on ${p.expiry_date}.`,
+          message: `${getPolicyHeadlineText(p.policy_number, p.plate)} (${p.owner}) expired on ${p.expiry_date}.`,
           policyId: p.id,
         });
       }
 
       // 1b. SMS — deduplicated via sms_logs (only one SMS per policy per day)
+      const smsExpiryReference = normalizeTextValue(p.plate) || normalizeTextValue(p.policy_number);
       const [smsSentToday] = await query(`
         SELECT id FROM sms_logs
         WHERE phone_number = ?
           AND message LIKE ?
           AND DATE(created_at) = CURDATE()
         LIMIT 1
-      `, [formatRwandaNumber(p.contact), `%${p.policy_number}%expired%`]);
+      `, [formatRwandaNumber(p.contact), `%${smsExpiryReference}%expired%`]);
 
       if (!smsSentToday) {
         sendSMS(
           p.contact,
-          `Dear ${p.owner}, your insurance policy ${p.policy_number} (${p.plate}) expired on ${p.expiry_date}. Please contact us to renew immediately.`,
+          `Dear ${p.owner}, your insurance for ${getPolicyReferenceText(p.policy_number, p.plate)} expired on ${p.expiry_date}. Please contact us to renew immediately.`,
           p.created_by || null
         ).catch(console.error);
       }
@@ -1855,7 +2054,7 @@ cron.schedule("0 8 * * *", async () => {
           targetRole: "User",
           activityType: "POLICY_EXPIRES_TODAY",
           title: "⚠️ Policy Expires Today",
-          message: `Policy ${p.policy_number} (${p.plate} — ${p.owner}) expires TODAY. Renew now to avoid a lapse in coverage.`,
+          message: `${getPolicyHeadlineText(p.policy_number, p.plate)} (${p.owner}) expires TODAY. Renew now to avoid a lapse in coverage.`,
           policyId: p.id,
         });
 
@@ -1864,14 +2063,14 @@ cron.schedule("0 8 * * *", async () => {
           targetRole: "Admin",
           activityType: "POLICY_EXPIRES_TODAY",
           title: "⚠️ Policy Expires Today",
-          message: `Policy ${p.policy_number} (${p.plate} — ${p.owner}) expires today.`,
+          message: `${getPolicyHeadlineText(p.policy_number, p.plate)} (${p.owner}) expires today.`,
           policyId: p.id,
         });
       }
 
       sendSMS(
         p.contact,
-        `Dear ${p.owner}, your insurance policy ${p.policy_number} (${p.plate}) expires TODAY (${p.expiry_date}). Please renew immediately to stay covered.`,
+        `Dear ${p.owner}, your insurance for ${getPolicyReferenceText(p.policy_number, p.plate)} expires TODAY (${p.expiry_date}). Please renew immediately to stay covered.`,
         p.created_by || null
       ).catch(console.error);
     }
@@ -1901,7 +2100,7 @@ cron.schedule("0 8 * * *", async () => {
           targetRole: "User",
           activityType: "POLICY_EXPIRING_SOON",
           title: "Policy Expiring Soon",
-          message: `Policy ${p.policy_number} (${p.plate} — ${p.owner}) expires in ${p.days_left} day(s) on ${p.expiry_date}. Please arrange renewal.`,
+          message: `${getPolicyHeadlineText(p.policy_number, p.plate)} (${p.owner}) expires in ${p.days_left} day(s) on ${p.expiry_date}. Please arrange renewal.`,
           policyId: p.id,
         });
 
@@ -1910,24 +2109,25 @@ cron.schedule("0 8 * * *", async () => {
           targetRole: "Admin",
           activityType: "POLICY_EXPIRING_SOON",
           title: "Policy Expiring Soon",
-          message: `Policy ${p.policy_number} (${p.plate} — ${p.owner}) expires in ${p.days_left} day(s).`,
+          message: `${getPolicyHeadlineText(p.policy_number, p.plate)} (${p.owner}) expires in ${p.days_left} day(s).`,
           policyId: p.id,
         });
       }
 
       // SMS for expiring soon (only once per policy per day)
+      const smsExpiringSoonReference = normalizeTextValue(p.plate) || normalizeTextValue(p.policy_number);
       const [smsSent] = await query(`
         SELECT id FROM sms_logs
         WHERE phone_number = ?
           AND message LIKE ?
           AND DATE(created_at) = CURDATE()
         LIMIT 1
-      `, [formatRwandaNumber(p.contact), `%${p.policy_number}%${p.days_left} day%`]);
+      `, [formatRwandaNumber(p.contact), `%${smsExpiringSoonReference}%${p.days_left} day%`]);
 
       if (!smsSent) {
         sendSMS(
           p.contact,
-          `Dear ${p.owner}, your insurance policy ${p.policy_number} (${p.plate}) expires in ${p.days_left} day(s) on ${p.expiry_date}. Please renew to avoid interruption.`,
+          `Dear ${p.owner}, your insurance for ${getPolicyReferenceText(p.policy_number, p.plate)} expires in ${p.days_left} day(s) on ${p.expiry_date}. Please renew to avoid interruption.`,
           p.created_by || null
         ).catch(console.error);
       }
@@ -1957,14 +2157,14 @@ cron.schedule("0 8 * * *", async () => {
           targetRole: "User",
           activityType: "POLICY_30DAY_REMINDER",
           title: "30-Day Renewal Reminder",
-          message: `Policy ${p.policy_number} (${p.plate} — ${p.owner}) expires in 30 days on ${p.expiry_date}. Start your renewal process early.`,
+          message: `${getPolicyHeadlineText(p.policy_number, p.plate)} (${p.owner}) expires in 30 days on ${p.expiry_date}. Start your renewal process early.`,
           policyId: p.id,
         });
       }
 
       sendSMS(
         p.contact,
-        `Dear ${p.owner}, this is an advance reminder: your insurance policy ${p.policy_number} (${p.plate}) expires in 30 days on ${p.expiry_date}. Contact us to renew early.`,
+        `Dear ${p.owner}, this is an advance reminder: your insurance for ${getPolicyReferenceText(p.policy_number, p.plate)} expires in 30 days on ${p.expiry_date}. Contact us to renew early.`,
         p.created_by || null
       ).catch(console.error);
     }
@@ -1993,7 +2193,11 @@ app.put("/policies/:id/renew", isAuthenticated, async (req, res) => {
 
   const [current] = await query(
     `
-      SELECT start_date, expiry_date, policy_number
+      SELECT
+        DATE_FORMAT(start_date, '%Y-%m-%d') AS start_date,
+        DATE_FORMAT(expiry_date, '%Y-%m-%d') AS expiry_date,
+        contact,
+        policy_number
       FROM policies
       ${buildWhereClause("id = ?", scope.condition)}
     `,
@@ -2004,11 +2208,30 @@ app.put("/policies/:id/renew", isAuthenticated, async (req, res) => {
     return res.status(404).json({ error: "Policy not found" });
   }
 
-  // Save old expiry
-  await query(`
-    INSERT INTO policy_history (policy_id, created_by, expiry_date, renewed_date)
-    VALUES (?, ?, ?, ?)
-  `, [policyId, req.session.userId, current.expiry_date, normalizedStartDate]);
+  const currentSnapshot = getPolicyComparableSnapshot({
+    start_date: current.start_date,
+    expiry_date: current.expiry_date,
+    contact: current.contact,
+  });
+  const nextSnapshot = getPolicyComparableSnapshot({
+    start_date: normalizedStartDate,
+    expiry_date: normalizedExpiryDate,
+    contact: cleanContact,
+  });
+  const changedFields = getPolicyFieldChanges(currentSnapshot, nextSnapshot);
+
+  if (!changedFields.length) {
+    return res.json({ message: "Policy already has the same renewal dates and contact" });
+  }
+
+  if (hasPolicyDateChanges(changedFields)) {
+    await insertRenewalHistory({
+      policyId,
+      actorUserId: req.session.userId,
+      previousExpiryDate: currentSnapshot.expiry_date,
+      renewedDate: nextSnapshot.start_date,
+    });
+  }
 
   // Update policy dates
   await query(`
@@ -2019,7 +2242,11 @@ app.put("/policies/:id/renew", isAuthenticated, async (req, res) => {
 
   const displayExpiryDate = formatDateForDisplay(normalizedExpiryDate);
 
-  sendSMS(cleanContact, `Your policy ${current.policy_number} was renewed until ${displayExpiryDate}`, req.session.userId)
+  sendSMS(
+    cleanContact,
+    `Your insurance for ${getPolicyReferenceText(current.policy_number, current.plate)} was renewed until ${displayExpiryDate}`,
+    req.session.userId
+  )
     .catch(console.error);
 
   await createNotification({
@@ -2027,7 +2254,7 @@ app.put("/policies/:id/renew", isAuthenticated, async (req, res) => {
     targetRole: "User",
     activityType: "POLICY_RENEWED",
     title: "Policy Renewed",
-    message: `Policy ${current.policy_number} was renewed until ${displayExpiryDate}.`,
+    message: `${getPolicyHeadlineText(current.policy_number, current.plate)} was renewed until ${displayExpiryDate}.`,
     policyId: policyId,
   });
 
@@ -2065,10 +2292,30 @@ app.get("/api/policy-history", isAuthenticated, async (req, res) => {
   }
 });
 
-// 2️⃣ Get history for a specific policy
+// 2️⃣ Get only expired policies (not yet renewed)
+app.get("/api/policy-history/expired", isAuthenticated, async (req, res) => {
+  try {
+    const scope = getPolicyScope(req, "p");
+    const rows = await query(`
+      SELECT ph.id, ph.policy_id, ph.created_by, ph.expiry_date, ph.renewed_date, ph.created_at, ph.updated_at,
+             p.policy_number, p.plate, p.owner, p.company
+      FROM policy_history ph
+      JOIN policies p ON p.id = ph.policy_id
+      ${buildWhereClause("ph.renewed_date IS NULL", scope.condition)}
+      ORDER BY ph.expiry_date DESC
+    `, scope.params);
+
+    res.json(rows);
+  } catch (err) {
+    console.error("Expired policy history fetch error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3️⃣ Get history for a specific policy
 app.get("/api/policy-history/:policyId", isAuthenticated, async (req, res) => {
   const { policyId } = req.params;
-  const id = parseInt(policyId);
+  const id = parseInt(policyId, 10);
   if (isNaN(id)) {
     return res.status(400).json({ error: "Invalid policy ID" });
   }
@@ -2086,26 +2333,6 @@ app.get("/api/policy-history/:policyId", isAuthenticated, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("Policy history fetch error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 3️⃣ Get only expired policies (not yet renewed)
-app.get("/api/policy-history/expired", isAuthenticated, async (req, res) => {
-  try {
-    const scope = getPolicyScope(req, "p");
-    const rows = await query(`
-      SELECT ph.id, ph.policy_id, ph.created_by, ph.expiry_date, ph.renewed_date, ph.created_at, ph.updated_at,
-             p.policy_number, p.plate, p.owner, p.company
-      FROM policy_history ph
-      JOIN policies p ON p.id = ph.policy_id
-      ${buildWhereClause("ph.renewed_date IS NULL", scope.condition)}
-      ORDER BY ph.expiry_date DESC
-    `, scope.params);
-
-    res.json(rows);
-  } catch (err) {
-    console.error("Expired policy history fetch error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2269,7 +2496,7 @@ app.post("/api/policies/broadcast", isAuthenticated, async (req, res) => {
         const personalizedMessage = template
           .replace(/{owner}/g, client.owner || "Client")
           .replace(/{policy_number}/g, client.policy_number || client.plate || "your policy")
-          .replace(/{plate}/g, client.policy_number || client.plate || "your policy")
+          .replace(/{plate}/g, client.plate || client.policy_number || "your policy")
           .replace(/{days}/g, client.days || "0");
 
         // Use your existing sendSMS helper
@@ -2306,6 +2533,7 @@ app.post("/policies/import", isAuthenticated, async (req, res) => {
 
   const insertedRows = [];
   const updatedRows = [];
+  const unchangedRows = [];
   const skippedRows = [];
 
   // ✅ Helper: persist every failure to the failed_imports table
@@ -2359,9 +2587,9 @@ app.post("/policies/import", isAuthenticated, async (req, res) => {
       let { policy_number, plate, owner, company, start_date, expiry_date, contact } = currentPolicy;
 
       const cleanPolicyNumber = policy_number?.trim();
-      const cleanPlate = plate?.trim() || "⛔ Please Update";
+      const cleanPlate = plate?.trim();
       const cleanOwner = owner?.trim();
-      const cleanCompany = company?.trim().toUpperCase();
+      const cleanCompany = normalizeCompanyName(company);
       const normalizedStartDate = normalizeImportDate(start_date);
       const normalizedExpiryDate = normalizeImportDate(expiry_date);
       const cleanContact = formatRwandaNumber(contact);
@@ -2389,26 +2617,70 @@ app.post("/policies/import", isAuthenticated, async (req, res) => {
       }
 
       const existing = await query(
-        "SELECT id, created_by FROM policies WHERE policy_number = ? LIMIT 1",
+        `
+          SELECT
+            id,
+            created_by,
+            plate,
+            owner,
+            company,
+            DATE_FORMAT(start_date, '%Y-%m-%d') AS start_date,
+            DATE_FORMAT(expiry_date, '%Y-%m-%d') AS expiry_date,
+            contact
+          FROM policies
+          WHERE policy_number = ?
+          LIMIT 1
+        `,
         [cleanPolicyNumber]
       );
 
       if (existing.length > 0) {
-        if (!canManageAllPolicies && existing[0].created_by !== req.session.userId) {
+        const existingPolicy = existing[0];
+
+        if (!canManageAllPolicies && existingPolicy.created_by !== req.session.userId) {
           const reason = `Policy number ${cleanPolicyNumber} already belongs to another user`;
           skippedRows.push({ row: rowNumber, reason, data: currentPolicy });
           await logFailure(i, policies[i], reason); // ✅ persist
           continue;
         }
 
-        // ----- UPDATE EXISTING POLICY -----
-        await query(
-          `UPDATE policies 
-           SET plate = ?, owner = ?, company = ?, start_date = ?, expiry_date = ?, contact = ?
-           WHERE policy_number = ?`,
-          [cleanPlate, cleanOwner, cleanCompany, normalizedStartDate, normalizedExpiryDate, cleanContact, cleanPolicyNumber]
-        );
-        updatedRows.push({ row: rowNumber, policy_number: cleanPolicyNumber, status: "updated" });
+        const currentSnapshot = getPolicyComparableSnapshot(existingPolicy);
+        const nextSnapshot = getPolicyComparableSnapshot({
+          plate: cleanPlate || currentSnapshot.plate || "⛔ Please Update",
+          owner: cleanOwner,
+          company: cleanCompany,
+          start_date: normalizedStartDate,
+          expiry_date: normalizedExpiryDate,
+          contact: cleanContact,
+        });
+        const changedFields = getPolicyFieldChanges(currentSnapshot, nextSnapshot);
+
+        if (!changedFields.length) {
+          unchangedRows.push({
+            row: rowNumber,
+            policy_number: cleanPolicyNumber,
+            status: "unchanged",
+          });
+          continue;
+        }
+
+        if (hasPolicyDateChanges(changedFields)) {
+          await insertRenewalHistory({
+            policyId: existingPolicy.id,
+            actorUserId: req.session.userId,
+            previousExpiryDate: currentSnapshot.expiry_date,
+            renewedDate: nextSnapshot.start_date,
+          });
+        }
+
+        await updatePolicyFromSnapshot(existingPolicy.id, nextSnapshot);
+        updatedRows.push({
+          row: rowNumber,
+          policy_number: cleanPolicyNumber,
+          status: "updated",
+          renewed: hasPolicyDateChanges(changedFields),
+          changed_fields: changedFields,
+        });
 
       } else {
         // ----- INSERT NEW POLICY -----
@@ -2416,7 +2688,16 @@ app.post("/policies/import", isAuthenticated, async (req, res) => {
           `INSERT INTO policies
             (created_by, policy_number, plate, owner, company, start_date, expiry_date, contact)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [req.session.userId, cleanPolicyNumber, cleanPlate, cleanOwner, cleanCompany, normalizedStartDate, normalizedExpiryDate, cleanContact]
+          [
+            req.session.userId,
+            cleanPolicyNumber,
+            cleanPlate || "⛔ Please Update",
+            cleanOwner,
+            cleanCompany,
+            normalizedStartDate,
+            normalizedExpiryDate,
+            cleanContact,
+          ]
         );
         insertedRows.push({ row: rowNumber, id: result.insertId, policy_number: cleanPolicyNumber });
       }
@@ -2428,10 +2709,10 @@ app.post("/policies/import", isAuthenticated, async (req, res) => {
     }
   }
 
-  const totalProcessed = insertedRows.length + updatedRows.length;
+  const totalProcessed = insertedRows.length + updatedRows.length + unchangedRows.length;
   const skippedLabel = `${skippedRows.length} row${skippedRows.length === 1 ? "" : "s"} skipped.`;
   let summary = totalProcessed > 0
-    ? `Processed ${totalProcessed} policies. (${insertedRows.length} new, ${updatedRows.length} updated).`
+    ? `Processed ${totalProcessed} policies. (${insertedRows.length} new, ${updatedRows.length} updated, ${unchangedRows.length} unchanged).`
     : "No policies were imported.";
   if (skippedRows.length > 0) summary += ` ${skippedLabel}`;
 
@@ -2442,7 +2723,11 @@ app.post("/policies/import", isAuthenticated, async (req, res) => {
     totalRows: policies.length + failedRowsFromClient.length,
     inserted: insertedRows.length,
     updated: updatedRows.length,
+    unchanged: unchangedRows.length,
     skipped: skippedRows.length,
+    insertedRows,
+    updatedRows,
+    unchangedRows,
     skippedRows,
   });
 });
@@ -2523,6 +2808,375 @@ app.delete("/api/failed-imports", isAdmin, async (req, res) => {
     await query("ALTER TABLE failed_imports AUTO_INCREMENT = 1");
     res.json({ message: "All failed import records cleared" });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ======================== CHAT ========================
+app.get("/api/chat/users", isAuthenticated, async (req, res) => {
+  try {
+    const onlineUserIds = new Set(getOnlineChatUserIds());
+    const users = await query(
+      `
+        SELECT id, name, email, role, status, profile_picture
+        FROM users
+        WHERE id <> ?
+          AND status = 'Active'
+        ORDER BY CASE WHEN LOWER(role) = 'admin' THEN 0 ELSE 1 END, name ASC
+      `,
+      [req.session.userId]
+    );
+
+    res.json({
+      users: users.map(user => ({
+        ...user,
+        online: onlineUserIds.has(Number(user.id)),
+      })),
+    });
+  } catch (err) {
+    console.error("Chat users fetch error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/chat/conversations", isAuthenticated, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const onlineUserIds = new Set(getOnlineChatUserIds());
+    const conversations = await query(
+      `
+        SELECT
+          u.id,
+          u.name,
+          u.email,
+          u.role,
+          u.status,
+          u.profile_picture,
+          lm.id AS last_message_id,
+          lm.sender_id AS last_message_sender_id,
+          lm.recipient_id AS last_message_recipient_id,
+          lm.message AS last_message,
+          DATE_FORMAT(lm.created_at, '%Y-%m-%d %H:%i:%s') AS last_message_at,
+          lm.is_read AS last_message_is_read,
+          DATE_FORMAT(lm.read_at, '%Y-%m-%d %H:%i:%s') AS last_message_read_at,
+          COALESCE(unread.unread_count, 0) AS unread_count
+        FROM (
+          SELECT DISTINCT
+            CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END AS other_user_id
+          FROM chat_messages
+          WHERE sender_id = ? OR recipient_id = ?
+        ) participants
+        JOIN users u ON u.id = participants.other_user_id
+        LEFT JOIN (
+          SELECT
+            grouped.other_user_id,
+            MAX(grouped.id) AS last_message_id
+          FROM (
+            SELECT
+              id,
+              CASE WHEN sender_id = ? THEN recipient_id ELSE sender_id END AS other_user_id
+            FROM chat_messages
+            WHERE sender_id = ? OR recipient_id = ?
+          ) grouped
+          GROUP BY grouped.other_user_id
+        ) last_ids ON last_ids.other_user_id = u.id
+        LEFT JOIN chat_messages lm ON lm.id = last_ids.last_message_id
+        LEFT JOIN (
+          SELECT sender_id AS other_user_id, COUNT(*) AS unread_count
+          FROM chat_messages
+          WHERE recipient_id = ? AND is_read = 0
+          GROUP BY sender_id
+        ) unread ON unread.other_user_id = u.id
+        ORDER BY lm.created_at DESC, u.name ASC
+      `,
+      [userId, userId, userId, userId, userId, userId, userId]
+    );
+
+    res.json({
+      conversations: conversations.map(conversation => ({
+        ...conversation,
+        online: onlineUserIds.has(Number(conversation.id)),
+      })),
+    });
+  } catch (err) {
+    console.error("Chat conversations fetch error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/chat/messages/:userId", isAuthenticated, async (req, res) => {
+  try {
+    const currentUserId = req.session.userId;
+    const otherUserId = Number(req.params.userId);
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isInteger(requestedLimit)
+      ? Math.max(1, Math.min(requestedLimit, 200))
+      : 100;
+
+    if (!Number.isInteger(otherUserId) || otherUserId <= 0 || otherUserId === currentUserId) {
+      return res.status(400).json({ error: "Invalid chat user" });
+    }
+
+    const [participant] = await query(
+      `
+        SELECT id, name, email, role, status, profile_picture
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [otherUserId]
+    );
+
+    if (!participant) {
+      return res.status(404).json({ error: "Chat user not found" });
+    }
+
+    const rows = await query(
+      `
+        SELECT
+          m.id,
+          m.sender_id,
+          m.recipient_id,
+          m.message,
+          m.is_read,
+          DATE_FORMAT(m.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
+          DATE_FORMAT(m.updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at,
+          DATE_FORMAT(m.read_at, '%Y-%m-%d %H:%i:%s') AS read_at,
+          s.name AS sender_name,
+          s.profile_picture AS sender_profile_picture,
+          r.name AS recipient_name,
+          r.profile_picture AS recipient_profile_picture
+        FROM chat_messages m
+        JOIN users s ON s.id = m.sender_id
+        JOIN users r ON r.id = m.recipient_id
+        WHERE (m.sender_id = ? AND m.recipient_id = ?)
+           OR (m.sender_id = ? AND m.recipient_id = ?)
+        ORDER BY m.created_at DESC, m.id DESC
+        LIMIT ?
+      `,
+      [currentUserId, otherUserId, otherUserId, currentUserId, limit]
+    );
+
+    res.json({
+      participant,
+      messages: rows.reverse(),
+    });
+  } catch (err) {
+    console.error("Chat message fetch error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/chat/conversations/:userId/read", isAuthenticated, async (req, res) => {
+  try {
+    const currentUserId = req.session.userId;
+    const otherUserId = Number(req.params.userId);
+
+    if (!Number.isInteger(otherUserId) || otherUserId <= 0 || otherUserId === currentUserId) {
+      return res.status(400).json({ error: "Invalid chat user" });
+    }
+
+    const result = await query(
+      `
+        UPDATE chat_messages
+        SET is_read = 1, read_at = NOW()
+        WHERE recipient_id = ?
+          AND sender_id = ?
+          AND is_read = 0
+      `,
+      [currentUserId, otherUserId]
+    );
+
+    const readAt = new Date().toISOString().slice(0, 19).replace("T", " ");
+
+    if (result.affectedRows > 0) {
+      sendChatEventToUser(otherUserId, {
+        type: "chat:read",
+        readerId: currentUserId,
+        readAt,
+      });
+    }
+
+    res.json({
+      message: "Conversation marked as read",
+      updated: result.affectedRows || 0,
+      readAt,
+    });
+  } catch (err) {
+    console.error("Chat read update error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/chat/messages", isAuthenticated, async (req, res) => {
+  try {
+    const senderId = req.session.userId;
+    const recipientId = Number(req.body?.recipient_id);
+    const message = normalizeChatMessage(req.body?.message);
+
+    if (!Number.isInteger(recipientId) || recipientId <= 0 || recipientId === senderId) {
+      return res.status(400).json({ error: "Invalid chat recipient" });
+    }
+
+    if (!message) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    if (message.length > CHAT_MESSAGE_MAX_LENGTH) {
+      return res.status(400).json({ error: `Message must be ${CHAT_MESSAGE_MAX_LENGTH} characters or fewer` });
+    }
+
+    const [recipient] = await query(
+      `
+        SELECT id, status
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [recipientId]
+    );
+
+    if (!recipient || recipient.status !== "Active") {
+      return res.status(404).json({ error: "Recipient not available" });
+    }
+
+    const result = await query(
+      `
+        INSERT INTO chat_messages (sender_id, recipient_id, message)
+        VALUES (?, ?, ?)
+      `,
+      [senderId, recipientId, message]
+    );
+
+    const createdMessage = await fetchChatMessageById(result.insertId);
+
+    if (!createdMessage) {
+      return res.status(500).json({ error: "Message saved but could not be loaded" });
+    }
+
+    const payload = {
+      type: "chat:message",
+      message: createdMessage,
+    };
+
+    sendChatEventToUser(senderId, payload);
+    sendChatEventToUser(recipientId, payload);
+
+    res.status(201).json({ message: createdMessage });
+  } catch (err) {
+    console.error("Chat send error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch("/api/chat/messages/:messageId", isAuthenticated, async (req, res) => {
+  try {
+    const currentUserId = req.session.userId;
+    const messageId = Number(req.params.messageId);
+    const nextMessage = normalizeChatMessage(req.body?.message);
+
+    if (!Number.isInteger(messageId) || messageId <= 0) {
+      return res.status(400).json({ error: "Invalid chat message" });
+    }
+
+    if (!nextMessage) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    if (nextMessage.length > CHAT_MESSAGE_MAX_LENGTH) {
+      return res.status(400).json({ error: `Message must be ${CHAT_MESSAGE_MAX_LENGTH} characters or fewer` });
+    }
+
+    const [existingMessage] = await query(
+      `
+        SELECT id, sender_id, recipient_id
+        FROM chat_messages
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [messageId]
+    );
+
+    if (!existingMessage) {
+      return res.status(404).json({ error: "Chat message not found" });
+    }
+
+    if (Number(existingMessage.sender_id) !== Number(currentUserId)) {
+      return res.status(403).json({ error: "Only the sender can edit this message" });
+    }
+
+    await query(
+      `
+        UPDATE chat_messages
+        SET message = ?, updated_at = NOW()
+        WHERE id = ?
+      `,
+      [nextMessage, messageId]
+    );
+
+    const updatedMessage = await fetchChatMessageById(messageId);
+
+    if (!updatedMessage) {
+      return res.status(500).json({ error: "Message updated but could not be loaded" });
+    }
+
+    const payload = {
+      type: "chat:updated",
+      message: updatedMessage,
+    };
+
+    sendChatEventToUser(existingMessage.sender_id, payload);
+    sendChatEventToUser(existingMessage.recipient_id, payload);
+
+    res.json({ message: updatedMessage });
+  } catch (err) {
+    console.error("Chat update error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/chat/messages/:messageId", isAuthenticated, async (req, res) => {
+  try {
+    const currentUserId = req.session.userId;
+    const messageId = Number(req.params.messageId);
+
+    if (!Number.isInteger(messageId) || messageId <= 0) {
+      return res.status(400).json({ error: "Invalid chat message" });
+    }
+
+    const [existingMessage] = await query(
+      `
+        SELECT id, sender_id, recipient_id
+        FROM chat_messages
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [messageId]
+    );
+
+    if (!existingMessage) {
+      return res.status(404).json({ error: "Chat message not found" });
+    }
+
+    if (Number(existingMessage.sender_id) !== Number(currentUserId)) {
+      return res.status(403).json({ error: "Only the sender can delete this message" });
+    }
+
+    await query("DELETE FROM chat_messages WHERE id = ?", [messageId]);
+
+    const payload = {
+      type: "chat:deleted",
+      messageId,
+      senderId: Number(existingMessage.sender_id),
+      recipientId: Number(existingMessage.recipient_id),
+    };
+
+    sendChatEventToUser(existingMessage.sender_id, payload);
+    sendChatEventToUser(existingMessage.recipient_id, payload);
+
+    res.json({ message: "Chat message deleted", deletedId: messageId });
+  } catch (err) {
+    console.error("Chat delete error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2687,6 +3341,7 @@ app.get("/api/admin/user-activities", isAdmin, async (req, res) => {
           SELECT COUNT(*)
           FROM policy_history ph
           WHERE ph.created_by = u.id
+            AND ph.renewed_date IS NOT NULL
         ) AS renewals,
 
         (
@@ -2739,5 +3394,116 @@ app.use((err, req, res, next) => {
 });
 
 //===================== START SERVER ========================
+const server = http.createServer(app);
+app.listen = server.listen.bind(server);
+const chatWebSocketServer = new WebSocketServer({ noServer: true });
+
+chatWebSocketServer.on("connection", (socket, request) => {
+  const userId = Number(request.session.userId);
+  socket.isAlive = true;
+  const userSockets = getChatConnectionSet(userId);
+  userSockets.add(socket);
+
+  sendSocketPayload(socket, {
+    type: "chat:ready",
+    userId,
+    onlineUserIds: getOnlineChatUserIds(),
+  });
+  broadcastChatPresence(userId, true);
+
+  socket.on("pong", () => {
+    socket.isAlive = true;
+  });
+
+  socket.on("message", rawMessage => {
+    try {
+      const payload = JSON.parse(String(rawMessage || "{}"));
+
+      if (payload?.type === "chat:typing") {
+        const recipientId = Number(payload.recipientId);
+
+        if (!Number.isInteger(recipientId) || recipientId <= 0 || recipientId === userId) {
+          return;
+        }
+
+        sendChatEventToUser(recipientId, {
+          type: "chat:typing",
+          senderId: userId,
+          isTyping: Boolean(payload.isTyping),
+        });
+      }
+    } catch (err) {
+      console.error("Chat socket message error:", err.message);
+    }
+  });
+
+  socket.on("close", () => {
+    const sockets = activeChatConnections.get(String(userId));
+    if (!sockets) {
+      return;
+    }
+
+    sockets.delete(socket);
+
+    if (sockets.size === 0) {
+      activeChatConnections.delete(String(userId));
+      broadcastChatPresence(userId, false);
+    }
+  });
+
+  socket.on("error", err => {
+    console.error("Chat socket error:", err.message);
+  });
+});
+
+server.on("upgrade", (request, socket, head) => {
+  try {
+    const upgradeUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+
+    if (upgradeUrl.pathname !== CHAT_SOCKET_PATH) {
+      socket.destroy();
+      return;
+    }
+
+    if (!isAllowedOrigin(request.headers.origin)) {
+      socket.destroy();
+      return;
+    }
+
+    sessionMiddleware(request, {}, () => {
+      if (!request.session?.userId) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      chatWebSocketServer.handleUpgrade(request, socket, head, ws => {
+        chatWebSocketServer.emit("connection", ws, request);
+      });
+    });
+  } catch (err) {
+    socket.destroy();
+  }
+});
+
+const chatHeartbeat = setInterval(() => {
+  chatWebSocketServer.clients.forEach(socket => {
+    if (socket.isAlive === false) {
+      socket.terminate();
+      return;
+    }
+
+    socket.isAlive = false;
+
+    if (socket.readyState === 1) {
+      socket.ping();
+    }
+  });
+}, 30000);
+
+server.on("close", () => {
+  clearInterval(chatHeartbeat);
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT,()=> console.log(`🚀 Server running on port ${PORT} `));

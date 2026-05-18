@@ -85,7 +85,7 @@ export const PolicyTable = ({
   const [editedMessage, setEditedMessage] = useState("");
   const [copied, setCopied] = useState(false);
 
-  const getPolicyReference = (policy: any) => policy ? (policy.policy_number || policy.plate || "N/A") : "N/A";
+  const getPolicyReference = (policy: any) => policy ? (policy.plate || policy.policy_number || "N/A") : "N/A";
   const getExpiryDate = (policy: any) => policy ? (policy.expiry_date || policy.expiryDate) : "N/A";
 
   const filteredData = useMemo(() => {
@@ -321,7 +321,7 @@ export const PolicyTable = ({
                 </div>
                 <div>
                   <DialogTitle className="text-lg font-bold">Draft Message</DialogTitle>
-                  <p className="text-slate-400 text-xs">Policy: {getPolicyReference(messagePolicy)}</p>
+                  <p className="text-slate-400 text-xs">Plate: {getPolicyReference(messagePolicy)}</p>
                 </div>
               </div>
               <Badge variant="outline" className="border-slate-700 text-blue-400 bg-blue-500/10 px-3 py-1">

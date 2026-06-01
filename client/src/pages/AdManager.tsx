@@ -120,37 +120,37 @@ export const AdManager: React.FC = () => {
   };
 
   return (
-    <div className="px-4 py-8 max-w-7xl mx-auto space-y-8 min-h-screen">
+    <div className="mx-auto min-h-screen w-full max-w-7xl space-y-6 px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
       
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">Ad Campaign Manager</h1>
-          <p className="text-slate-500 font-medium">Control the sponsor media shown on dashboard cards.</p>
+      <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white sm:text-3xl">Ad Campaign Manager</h1>
+          <p className="mt-1 text-sm font-medium text-slate-500 sm:text-base">Control the sponsor media shown on dashboard cards.</p>
         </div>
 
         <Dialog open={isAdding} onOpenChange={(val) => { setIsAdding(val); if(!val) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button className="h-12 px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl gap-2 shadow-xl shadow-indigo-200">
+            <Button className="h-11 w-full gap-2 rounded-md bg-indigo-600 px-5 font-bold text-white shadow-sm hover:bg-indigo-700 sm:w-auto">
               <Plus size={20} strokeWidth={3} /> Launch Campaign
             </Button>
           </DialogTrigger>
 
-          <DialogContent className="w-full sm:max-w-[550px] p-0 overflow-hidden border-none shadow-2xl rounded-[32px]">
-            <div className="relative bg-slate-900 p-8 text-white">
-              <DialogClose className="absolute right-6 top-6 rounded-full p-2 hover:bg-white/10 transition-colors"><Plus className="rotate-45" size={18} /></DialogClose>
-              <div className="flex items-center gap-5">
-                <div className="w-14 h-14 bg-indigo-500 rounded-2xl flex items-center justify-center">
+          <DialogContent className="max-h-[92vh] w-[calc(100vw-1.5rem)] overflow-y-auto rounded-lg border-none p-0 shadow-2xl sm:max-w-[640px]">
+            <div className="relative bg-slate-900 p-5 text-white sm:p-8">
+              <DialogClose className="absolute right-4 top-4 rounded-full p-2 transition-colors hover:bg-white/10 sm:right-6 sm:top-6"><Plus className="rotate-45" size={18} /></DialogClose>
+              <div className="flex items-center gap-4 pr-8 sm:gap-5">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-indigo-500 sm:h-14 sm:w-14">
                   <Megaphone className="w-7 h-7 text-white" />
                 </div>
-                <div>
-                  <DialogTitle className="text-2xl font-bold">New Sponsorship</DialogTitle>
+                <div className="min-w-0">
+                  <DialogTitle className="text-xl font-bold sm:text-2xl">New Sponsorship</DialogTitle>
                   <p className="text-slate-400 text-sm">Upload local files or use external links</p>
                 </div>
               </div>
             </div>
 
-            <div className="p-8 space-y-5 bg-white dark:bg-slate-950">
+            <div className="space-y-5 bg-white p-5 dark:bg-slate-950 sm:p-8">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Sponsor Name</Label>
@@ -158,7 +158,7 @@ export const AdManager: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Ad Type</Label>
-                  <select className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-transparent text-sm" value={formData.ad_type} onChange={e => setFormData({...formData, ad_type: e.target.value as any})}>
+                  <select className="h-10 w-full rounded-md border border-slate-200 bg-transparent px-3 text-sm dark:border-slate-800" value={formData.ad_type} onChange={e => setFormData({...formData, ad_type: e.target.value as any})}>
                     <option value="image">Static Image</option>
                     <option value="video">Promotional Video</option>
                   </select>
@@ -168,16 +168,18 @@ export const AdManager: React.FC = () => {
               {/* Input Mode Selector */}
               <div className="space-y-2">
                 <Label className="text-[10px] font-bold uppercase text-slate-500 tracking-widest">Media Source</Label>
-                <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl gap-1">
+                <div className="grid grid-cols-2 gap-1 rounded-md bg-slate-100 p-1 dark:bg-slate-900">
                   <button 
+                    type="button"
                     onClick={() => setUploadMode("url")}
-                    className={cn("flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all", uploadMode === "url" ? "bg-white dark:bg-slate-800 shadow-sm text-indigo-600" : "text-slate-500")}
+                    className={cn("flex items-center justify-center gap-2 rounded-md py-2 text-xs font-bold transition-all", uploadMode === "url" ? "bg-white text-indigo-600 shadow-sm dark:bg-slate-800" : "text-slate-500")}
                   >
                     <Link size={14} /> Paste Link
                   </button>
                   <button 
+                    type="button"
                     onClick={() => setUploadMode("file")}
-                    className={cn("flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all", uploadMode === "file" ? "bg-white dark:bg-slate-800 shadow-sm text-indigo-600" : "text-slate-500")}
+                    className={cn("flex items-center justify-center gap-2 rounded-md py-2 text-xs font-bold transition-all", uploadMode === "file" ? "bg-white text-indigo-600 shadow-sm dark:bg-slate-800" : "text-slate-500")}
                   >
                     <Upload size={14} /> Local File
                   </button>
@@ -217,8 +219,8 @@ export const AdManager: React.FC = () => {
               </div>
             </div>
 
-            <DialogFooter className="p-8 pt-0 bg-white dark:bg-slate-950">
-              <Button onClick={handleCreate} className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg transition-transform active:scale-[0.98]">
+            <DialogFooter className="bg-white p-5 pt-0 dark:bg-slate-950 sm:p-8 sm:pt-0">
+              <Button onClick={handleCreate} className="h-12 w-full rounded-md bg-indigo-600 font-bold text-white shadow-sm transition-transform hover:bg-indigo-700 active:scale-[0.98]">
                 Save to Database
               </Button>
             </DialogFooter>
@@ -227,16 +229,16 @@ export const AdManager: React.FC = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        <Card className="p-5 border-slate-200 flex items-center gap-4 bg-white dark:bg-slate-900">
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl"><BarChart3 size={24}/></div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Card className="flex items-center gap-4 rounded-lg border-slate-200 bg-white p-4 dark:bg-slate-900 sm:p-5">
+          <div className="rounded-md bg-indigo-50 p-3 text-indigo-600"><BarChart3 size={24}/></div>
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Campaigns</p>
             <p className="text-2xl font-black">{ads.length}</p>
           </div>
         </Card>
-        <Card className="p-5 border-slate-200 flex items-center gap-4 bg-white dark:bg-slate-900">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><CheckCircle2 size={24}/></div>
+        <Card className="flex items-center gap-4 rounded-lg border-slate-200 bg-white p-4 dark:bg-slate-900 sm:p-5">
+          <div className="rounded-md bg-emerald-50 p-3 text-emerald-600"><CheckCircle2 size={24}/></div>
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Active Ads</p>
             <p className="text-2xl font-black">{ads.filter(a => a.is_active).length}</p>
@@ -245,7 +247,7 @@ export const AdManager: React.FC = () => {
       </div>
 
       {/* Ads Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {isLoading ? (
           <div className="col-span-full flex flex-col items-center justify-center py-32 space-y-4">
             <Loader2 className="animate-spin text-indigo-600 w-12 h-12" />
@@ -254,7 +256,7 @@ export const AdManager: React.FC = () => {
         ) : (
           ads.map((ad: Ad) => (
             <Card key={ad.id} className={cn(
-              "overflow-hidden group border-slate-200 dark:border-slate-800 rounded-[32px] transition-all bg-white dark:bg-slate-900",
+              "group overflow-hidden rounded-lg border-slate-200 bg-white transition-all dark:border-slate-800 dark:bg-slate-900",
               !ad.is_active && "opacity-60 grayscale-[0.5]"
             )}>
               <div className="aspect-video relative bg-slate-100 dark:bg-slate-800 overflow-hidden">
@@ -275,23 +277,23 @@ export const AdManager: React.FC = () => {
                   />
                 )}
 
-                <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
-                  <Badge className={cn("border-none font-black text-[9px] uppercase px-3 py-1.5 rounded-full", ad.is_active ? "bg-emerald-500 text-white" : "bg-slate-500 text-white")}>
+                <div className="absolute right-3 top-3 flex flex-col items-end gap-2">
+                  <Badge className={cn("rounded-full border-none px-3 py-1.5 text-[9px] font-black uppercase", ad.is_active ? "bg-emerald-500 text-white" : "bg-slate-500 text-white")}>
                     {ad.is_active ? "Live" : "Paused"}
                   </Badge>
                 </div>
               </div>
 
-              <div className="p-6 space-y-5">
+              <div className="space-y-5 p-4 sm:p-5">
                 <div>
                   <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">{ad.company_name}</p>
-                  <h3 className="font-bold text-xl text-slate-900 dark:text-white leading-tight">{ad.title || "No Headline"}</h3>
+                  <h3 className="text-lg font-bold leading-tight text-slate-900 dark:text-white sm:text-xl">{ad.title || "No Headline"}</h3>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-center gap-2 pt-5 border-t border-slate-100 dark:border-slate-800">
+                <div className="grid grid-cols-[1fr_44px_44px] items-center gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
                   <Button 
                     variant="outline" 
-                    className={cn("flex-1 sm:flex-none w-full sm:w-auto h-11 rounded-xl gap-2 font-bold text-xs", ad.is_active ? "text-amber-600" : "text-emerald-600")}
+                    className={cn("h-11 rounded-md gap-2 text-xs font-bold", ad.is_active ? "text-amber-600" : "text-emerald-600")}
                     onClick={() => toggleStatus(ad)}
                   >
                     <Power size={14} /> {ad.is_active ? "Pause" : "Resume"}
@@ -299,13 +301,13 @@ export const AdManager: React.FC = () => {
                   
                   <Button 
                     variant="outline"
-                    className="h-11 w-11 p-0 rounded-xl hover:bg-red-50 hover:text-red-600 transition-colors mt-2 sm:mt-0"
+                    className="h-11 w-11 rounded-md p-0 transition-colors hover:bg-red-50 hover:text-red-600"
                     onClick={() => handleDelete(ad)}
                   >
                     <Trash2 size={16} />
                   </Button>
 
-                  <Button className="h-11 w-11 p-0 rounded-xl bg-slate-900 text-white shadow-lg active:scale-90 transition-transform mt-2 sm:mt-0" asChild>
+                  <Button className="h-11 w-11 rounded-md bg-slate-900 p-0 text-white shadow-sm transition-transform active:scale-90" asChild>
                     <a href={ad.target_url} target="_blank" rel="noopener noreferrer">
                       <ExternalLink size={16} />
                     </a>

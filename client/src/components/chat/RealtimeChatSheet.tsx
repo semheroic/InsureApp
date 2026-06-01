@@ -729,16 +729,16 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
         side="right"
         className="w-full border-slate-200 p-0 sm:max-w-6xl dark:border-slate-800"
       >
-        <div className="flex h-full min-h-screen flex-col bg-slate-950 text-slate-50 sm:min-h-0">
-          <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.28),_transparent_34%),linear-gradient(135deg,_#0f172a,_#020617)] px-6 py-5">
+        <div className="flex h-[100dvh] min-h-0 flex-col bg-slate-950 text-slate-50">
+          <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.28),_transparent_34%),linear-gradient(135deg,_#0f172a,_#020617)] px-4 py-4 sm:px-6 sm:py-5">
             <SheetHeader className="space-y-2 text-left">
-              <div className="flex items-center justify-between gap-4">
-                <div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <SheetTitle className="flex items-center gap-2 text-white">
                     <MessageSquareText className="h-5 w-5 text-cyan-300" />
                     Team Chat
                   </SheetTitle>
-                  <SheetDescription className="text-slate-300">
+                  <SheetDescription className="mt-1 text-sm text-slate-300">
                     Real-time conversations between account users and administrators.
                   </SheetDescription>
                 </div>
@@ -746,7 +746,7 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
                 <Badge
                   variant="outline"
                   className={cn(
-                    "border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold",
+                    "shrink-0 border-white/10 bg-white/5 px-2 py-1 text-[11px] font-semibold sm:px-3 sm:text-xs",
                     socketConnected ? "text-emerald-300" : "text-amber-300"
                   )}
                 >
@@ -768,9 +768,9 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
             </div>
           ) : (
             <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-              <aside className="flex w-full flex-col border-b border-white/10 bg-slate-900/70 lg:w-[340px] lg:border-b-0 lg:border-r">
-                <div className="border-b border-white/10 px-5 py-4">
-                  <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+              <aside className="flex max-h-[38dvh] w-full shrink-0 flex-col border-b border-white/10 bg-slate-900/70 lg:max-h-none lg:w-[340px] lg:border-b-0 lg:border-r">
+                <div className="border-b border-white/10 px-4 py-3 sm:px-5 sm:py-4">
+                  <div className="flex items-center gap-3 rounded-md border border-white/10 bg-white/5 px-3 py-2">
                     <Search className="h-4 w-4 text-slate-400" />
                     <Input
                       value={search}
@@ -781,7 +781,7 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between border-b border-white/10 px-5 py-3 text-xs uppercase tracking-[0.3em] text-slate-400">
+                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-xs uppercase tracking-[0.24em] text-slate-400 sm:px-5 sm:tracking-[0.3em]">
                   <span className="flex items-center gap-2">
                     <Users className="h-3.5 w-3.5" />
                     Contacts
@@ -791,7 +791,7 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
 
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   {filteredContacts.length === 0 ? (
-                    <div className="px-5 py-8 text-sm text-slate-400">
+                    <div className="px-4 py-6 text-sm text-slate-400 sm:px-5 sm:py-8">
                       No users match that search.
                     </div>
                   ) : (
@@ -801,7 +801,7 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
                         type="button"
                         onClick={() => setSelectedUserId(contact.id)}
                         className={cn(
-                          "flex w-full items-start gap-3 border-b border-white/5 px-5 py-4 text-left transition-colors",
+                          "flex w-full items-start gap-3 border-b border-white/5 px-4 py-3 text-left transition-colors sm:px-5 sm:py-4",
                           selectedUserId === contact.id
                             ? "bg-cyan-500/10"
                             : "hover:bg-white/5"
@@ -848,20 +848,20 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
                 </div>
               </aside>
 
-              <section className="flex min-h-0 flex-1 flex-col bg-[linear-gradient(180deg,_rgba(15,23,42,0.96),_rgba(2,6,23,1))]">
+              <section className="flex min-h-[52dvh] flex-1 flex-col bg-[linear-gradient(180deg,_rgba(15,23,42,0.96),_rgba(2,6,23,1))] lg:min-h-0">
                 {selectedUser ? (
                   <>
-                    <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-12 w-12 border border-white/10">
+                    <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Avatar className="h-10 w-10 shrink-0 border border-white/10 sm:h-12 sm:w-12">
                           <AvatarImage src={resolveMediaUrl(selectedUser.profile_picture)} alt={selectedUser.name} />
                           <AvatarFallback className="bg-slate-800 text-slate-100">
                             {getInitials(selectedUser.name)}
                           </AvatarFallback>
                         </Avatar>
 
-                        <div>
-                          <p className="text-base font-semibold text-white">{selectedUser.name}</p>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-white sm:text-base">{selectedUser.name}</p>
                           <div className="flex items-center gap-2 text-sm text-slate-400">
                             <span
                               className={cn(
@@ -874,12 +874,12 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
                         </div>
                       </div>
 
-                      <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-300">
+                      <Badge variant="outline" className="hidden shrink-0 border-white/10 bg-white/5 text-slate-300 sm:inline-flex">
                         {selectedUser.role}
                       </Badge>
                     </div>
 
-                    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+                    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
                       {messageLoading ? (
                         <div className="flex h-full items-center justify-center gap-3 text-slate-400">
                           <Loader2 className="h-5 w-5 animate-spin" />
@@ -908,20 +908,20 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
                                 )}
                               >
                                 <div
-                                  className={cn("flex max-w-[82%] flex-col gap-2", mine ? "items-end" : "items-start")}
+                                  className={cn("flex max-w-[90%] flex-col gap-2 sm:max-w-[82%]", mine ? "items-end" : "items-start")}
                                 >
                                   <div
                                     className={cn(
-                                      "rounded-3xl px-4 py-3 shadow-lg shadow-black/10",
+                                      "rounded-2xl px-4 py-3 shadow-lg shadow-black/10",
                                       mine
                                         ? "rounded-br-md bg-gradient-to-br from-cyan-400 to-blue-500 text-slate-950"
                                         : "rounded-bl-md bg-white/8 text-slate-100 backdrop-blur"
                                     )}
                                   >
-                                    <p className="whitespace-pre-wrap text-sm leading-6">{message.message}</p>
+                                    <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.message}</p>
                                     <div
                                       className={cn(
-                                        "mt-2 flex items-center gap-2 text-[11px]",
+                                        "mt-2 flex flex-wrap items-center gap-2 text-[11px]",
                                         mine ? "text-slate-900/80" : "text-slate-400"
                                       )}
                                     >
@@ -937,7 +937,7 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
                                   </div>
 
                                   {mine && (
-                                    <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                                    <div className="flex items-center gap-2 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                                       <Button
                                         type="button"
                                         size="sm"
@@ -978,10 +978,10 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
                       )}
                     </div>
 
-                    <div className="border-t border-white/10 bg-slate-950/80 px-6 py-4">
-                      <div className="rounded-[28px] border border-white/10 bg-white/5 p-3 backdrop-blur">
+                    <div className="border-t border-white/10 bg-slate-950/80 px-4 py-3 sm:px-6 sm:py-4">
+                      <div className="rounded-lg border border-white/10 bg-white/5 p-3 backdrop-blur">
                         {editingMessageId && (
-                          <div className="mb-3 flex items-center justify-between rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
+                          <div className="mb-3 flex flex-col gap-2 rounded-md border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100 sm:flex-row sm:items-center sm:justify-between">
                             <span>Editing your sent message</span>
                             <Button
                               type="button"
@@ -1001,23 +1001,23 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
                           onChange={event => handleDraftChange(event.target.value)}
                           onKeyDown={handleKeyDown}
                           placeholder={editingMessageId ? "Update your message..." : `Message ${selectedUser.name}...`}
-                          className="min-h-[92px] resize-none border-0 bg-transparent px-0 text-slate-100 placeholder:text-slate-500 focus-visible:ring-0"
+                          className="min-h-[76px] resize-none border-0 bg-transparent px-0 text-slate-100 placeholder:text-slate-500 focus-visible:ring-0 sm:min-h-[92px]"
                         />
 
-                        <div className="mt-3 flex items-center justify-between gap-3">
+                        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <p className="text-xs text-slate-500">
                             {editingMessageId
                               ? "Press Enter to save. Use Shift + Enter for a new line."
                               : "Press Enter to send. Use Shift + Enter for a new line."}
                           </p>
 
-                          <div className="flex items-center gap-2">
+                          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                             {editingMessageId && (
                               <Button
                                 type="button"
                                 variant="ghost"
                                 onClick={handleCancelEditingMessage}
-                                className="rounded-2xl border border-white/10 px-4 text-slate-200 hover:bg-white/5 hover:text-white"
+                                className="rounded-md border border-white/10 px-4 text-slate-200 hover:bg-white/5 hover:text-white"
                               >
                                 Cancel
                               </Button>
@@ -1026,7 +1026,10 @@ export default function RealtimeChatSheet({ open, onOpenChange }: RealtimeChatSh
                             <Button
                               onClick={() => void handleSubmitMessage()}
                               disabled={sending || !draft.trim() || !selectedUserId}
-                              className="rounded-2xl bg-cyan-400 px-5 text-slate-950 hover:bg-cyan-300"
+                              className={cn(
+                                "rounded-md bg-cyan-400 px-5 text-slate-950 hover:bg-cyan-300",
+                                !editingMessageId && "col-span-2"
+                              )}
                             >
                               {sending ? (
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

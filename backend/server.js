@@ -30,24 +30,46 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 // ======================== MIDDLEWARE ========================
-const allowedOrigins = [
+const normalizeOrigin = origin =>
+  String(origin || "")
+    .trim()
+    .replace(/\/+$/, "");
+
+const configuredOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.CLIENT_URL,
+  process.env.CORS_ORIGINS,
+]
+  .filter(Boolean)
+  .flatMap(value => String(value).split(","))
+  .map(normalizeOrigin)
+  .filter(Boolean);
+
+const allowedOrigins = new Set([
   "https://www.brightcoveragency.com",
   "https://brightcoveragency.com",
   "https://insure-app-olive.vercel.app",
-  "http://localhost:8080"
-];
+  "http://localhost:8080",
+  "http://localhost:5173",
+  "http://127.0.0.1:8080",
+  "http://127.0.0.1:5173",
+  ...configuredOrigins,
+].map(normalizeOrigin));
 
-const isAllowedOrigin = origin => !origin || allowedOrigins.includes(origin);
+const isAllowedOrigin = origin => !origin || allowedOrigins.has(normalizeOrigin(origin));
 
 app.use(cors({
   origin: function (origin, callback) {
     if (isAllowedOrigin(origin)) {
-      return callback(null, origin || "*"); // ✅ reflect the exact origin
+      return callback(null, true);
     }
-    console.log("Blocked CORS origin:", origin);
+    console.warn("Blocked CORS origin:", origin);
     return callback(null, false);
   },
-  credentials: true
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  optionsSuccessStatus: 204
 }));
 app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 app.use(bodyParser.urlencoded({
@@ -311,7 +333,7 @@ const getAdminActivityScope = req => {
     return queryScope;
   }
 
-  return normalizeActivityScope(req.session?.adminActivityScope) || "all";
+  return normalizeActivityScope(req.session?.adminActivityScope) || "mine";
 };
 
 const getPolicyScope = (req, alias = "") => {
@@ -325,6 +347,20 @@ const getPolicyScope = (req, alias = "") => {
   return {
     condition: `${prefix}created_by = ?`,
     params: [req.session.userId],
+    scopeMode,
+  };
+};
+
+const getUserDirectoryScope = req => {
+  const scopeMode = isAdminRequest(req) ? getAdminActivityScope(req) : "mine";
+
+  if (scopeMode === "all") {
+    return { condition: "", params: [], scopeMode };
+  }
+
+  return {
+    condition: "(id = ? OR created_by = ?)",
+    params: [req.session.userId, req.session.userId],
     scopeMode,
   };
 };
@@ -1066,7 +1102,7 @@ app.post("/auth/login", async (req, res) => {
   req
 );
     req.session.userRole = user.role;
-    req.session.adminActivityScope = user.role?.toLowerCase() === "admin" ? "all" : "mine";
+    req.session.adminActivityScope = "mine";
 
     res.json({ 
       id: user.id, 
@@ -1153,7 +1189,7 @@ app.put("/admin/activity-scope", isAdmin, (req, res) => {
 // ---------------- GET ALL USERS ----------------
 app.get("/users", isAuthenticated, async (req, res) => {
   try {
-    const scope = getPolicyScope(req);
+    const scope = getUserDirectoryScope(req);
     const sql = `
       SELECT 
         id, 
@@ -1166,6 +1202,7 @@ app.get("/users", isAuthenticated, async (req, res) => {
         status,
         /* Format join_date, or fallback to created_at if join_date is NULL */
         DATE_FORMAT(IFNULL(join_date, created_at), '%M %d, %Y') AS joined_date,
+        DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
         DATE_FORMAT(updated_at, '%d %b %Y, %h:%i %p') AS last_update
       FROM users
       ${buildWhereClause(scope.condition)}
@@ -1781,14 +1818,15 @@ app.get("/api/company-distribution", isAuthenticated, async (req,res)=>{
   res.json(data);
 });
 app.get("/api/sidebar-counts", isAuthenticated, async (req,res)=>{
-  const scope = getPolicyScope(req);
+  const policyScope = getPolicyScope(req);
+  const userScope = getUserDirectoryScope(req);
   const results = await query(
     `
       SELECT
-        (SELECT COUNT(*) FROM policies ${buildWhereClause(scope.condition)}) AS policies,
-        ${isAdminRequest(req) ? "(SELECT COUNT(*) FROM users)" : "1"} AS users
+        (SELECT COUNT(*) FROM policies ${buildWhereClause(policyScope.condition)}) AS policies,
+        (SELECT COUNT(*) FROM users ${buildWhereClause(userScope.condition)}) AS users
     `,
-    scope.params
+    [...policyScope.params, ...userScope.params]
   );
   res.json(results[0]||{ policies:0, users:0 });
 });
@@ -3284,33 +3322,40 @@ app.delete("/api/ads/:id", isAuthenticated, async (req, res) => {
 // --- ADMIN ACTIVITY SUMMARY ---
 app.get("/api/admin/activity-summary", isAdmin, async (req, res) => {
   try {
+    const scopeMode = getAdminActivityScope(req);
+    const ownOnly = scopeMode === "mine";
 
     const [users] = await query(`
       SELECT COUNT(*) AS totalUsers
       FROM users
-    `);
+      ${ownOnly ? "WHERE id = ?" : ""}
+    `, ownOnly ? [req.session.userId] : []);
 
     const [policies] = await query(`
       SELECT COUNT(*) AS totalPolicies
       FROM policies
-    `);
+      ${ownOnly ? "WHERE created_by = ?" : ""}
+    `, ownOnly ? [req.session.userId] : []);
 
     const [activeToday] = await query(`
       SELECT COUNT(DISTINCT user_id) AS activeToday
       FROM user_activity_logs
       WHERE DATE(created_at) = CURDATE()
-    `);
+      ${ownOnly ? "AND user_id = ?" : ""}
+    `, ownOnly ? [req.session.userId] : []);
 
     const [sms] = await query(`
       SELECT COUNT(*) AS totalSMS
       FROM sms_logs
-    `);
+      ${ownOnly ? "WHERE created_by = ?" : ""}
+    `, ownOnly ? [req.session.userId] : []);
 
     res.json({
       totalUsers: users.totalUsers,
       totalPolicies: policies.totalPolicies,
       activeToday: activeToday.activeToday,
-      totalSMS: sms.totalSMS
+      totalSMS: sms.totalSMS,
+      scope: scopeMode
     });
 
   } catch (err) {
@@ -3319,6 +3364,7 @@ app.get("/api/admin/activity-summary", isAdmin, async (req, res) => {
 });
 app.get("/api/admin/user-activities", isAdmin, async (req, res) => {
   try {
+    const scopeMode = getAdminActivityScope(req);
 
     const rows = await query(`
       SELECT
@@ -3368,8 +3414,9 @@ app.get("/api/admin/user-activities", isAdmin, async (req, res) => {
         ) AS last_logout
 
       FROM users u
+      ${scopeMode === "mine" ? "WHERE u.id = ?" : ""}
       ORDER BY last_login DESC
-    `);
+    `, scopeMode === "mine" ? [req.session.userId] : []);
 
     res.json(rows);
 

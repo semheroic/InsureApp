@@ -18,6 +18,7 @@ import {
 import { NavLink } from "@/components/NavLink";
 import { cn } from "@/lib/utils";
 import { useChatLauncher } from "@/contexts/ChatLauncherContext";
+import LOGO_MARK from "@/components/Layout/newlogo.PNG";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -251,8 +252,12 @@ export const Sidebar = (_props: SidebarProps) => {
         {/* Brand */}
         <div className="p-8">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-200 dark:shadow-none">
-              <span className="text-white font-black text-xl">B</span>
+            <div className="h-11 w-11 rounded-md border border-slate-200 bg-slate-950 p-1 shadow-lg dark:border-slate-800">
+              <img
+                src={LOGO_MARK}
+                alt="Bright Cover Agency logo"
+                className="h-full w-full object-contain"
+              />
             </div>
             <span className="font-bold text-slate-900 dark:text-slate-100 leading-tight tracking-tight">
               Bright Cover

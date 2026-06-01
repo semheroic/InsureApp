@@ -71,9 +71,11 @@ function AdminActivityDashboard() {
     currentPage * usersPerPage
   );
 
+  const viewingMine = summary.scope === "mine";
+
   const cards = [
     {
-      title: "Total Users",
+      title: viewingMine ? "My Profile" : "Total Users",
       value: summary.totalUsers || 0,
       icon: UsersRound,
       color:
@@ -139,7 +141,9 @@ function AdminActivityDashboard() {
           </h1>
 
           <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
-            Monitor users, sessions, activities and policy performance.
+            {viewingMine
+              ? "Review your sessions, activity and policy performance."
+              : "Monitor users, sessions, activities and policy performance."}
           </p>
 
         </div>
@@ -228,11 +232,11 @@ function AdminActivityDashboard() {
           <div>
 
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              User Activities
+              {viewingMine ? "My Activities" : "User Activities"}
             </h2>
 
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-              Real-time monitoring of all users.
+              {viewingMine ? "Your account activity and production totals." : "Real-time monitoring of all users."}
             </p>
 
           </div>

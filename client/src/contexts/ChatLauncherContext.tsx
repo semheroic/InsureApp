@@ -48,15 +48,15 @@ export const ChatLauncherProvider: React.FC<{ children: React.ReactNode }> = ({ 
               ease: "easeInOut",
             },
           }}
-          className="fixed bottom-5 right-5 z-[55] lg:bottom-8 lg:right-8"
+          className="fixed bottom-4 right-4 z-[55] sm:bottom-5 sm:right-5 lg:bottom-8 lg:right-8"
         >
           <Button
             type="button"
             onClick={value.openChat}
-            className="h-14 rounded-full bg-cyan-400 px-5 text-slate-950 shadow-[0_18px_45px_rgba(34,211,238,0.35)] hover:bg-cyan-300"
+            className="h-12 w-12 rounded-full bg-cyan-400 p-0 text-slate-950 shadow-[0_18px_45px_rgba(34,211,238,0.35)] hover:bg-cyan-300 sm:h-14 sm:w-auto sm:px-5"
           >
-            <MessageSquareText className="mr-2 h-5 w-5" />
-            Live Chat
+            <MessageSquareText className="h-5 w-5 sm:mr-2" />
+            <span className="hidden sm:inline">Live Chat</span>
           </Button>
         </motion.div>
       )}

@@ -43,11 +43,9 @@ export const Header = () => {
   const [user, setUser] = useState({
     id: 0, name: "", email: "", profile_picture: "", role: "", activity_scope: "mine" as "mine" | "all",
   });
-  const [smsNotifications, setSmsNotifications]   = useState([]);
-  const [notifications, setNotifications]         = useState([]);
-  const [smsUnreadCount, setSmsUnreadCount]       = useState(0);
-  const [systemUnreadCount, setSystemUnreadCount] = useState(0);
-  const [notificationSection, setNotificationSection] = useState<"sms" | "system">("sms");
+  const [notifications, setNotifications]         = useState<any[]>([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const notificationUnreadCountRef = useRef(0);
   const [search, setSearch]                       = useState("");
   const [isSearchOpen, setIsSearchOpen]           = useState(false);
   const [activeTab, setActiveTab]                 = useState<"all" | "unread">("all");
@@ -78,30 +76,20 @@ export const Header = () => {
   // ─── Notifications ────────────────────────────────────────────────────────
   const fetchNotifications = async () => {
     try {
-      const [smsRes, systemRes] = await Promise.all([
-        fetch(`${API_URL}/sms/logs`, { credentials: "include" }),
-        fetch(`${API_URL}/notifications`, { credentials: "include" }),
-      ]);
+      const res = await fetch(`${API_URL}/notifications`, { credentials: "include" });
+      const data = res.ok ? await res.json() : { notifications: [], unread: 0 };
 
-      const smsData = await smsRes.json();
-      const systemData = systemRes.ok ? await systemRes.json() : { notifications: [], unread: 0 };
+      const newNotifications = data.notifications || [];
+      const newUnread = data.unread || 0;
+      const previousUnread = notificationUnreadCountRef.current;
 
-      const newSmsNotifications = smsData.logs || [];
-      const newSmsUnread = smsData.unread || 0;
-      const newSystemNotifications = systemData.notifications || [];
-      const newSystemUnread = systemData.unread || 0;
-
-      const previousTotalUnread = smsUnreadCount + systemUnreadCount;
-      const newTotalUnread = newSmsUnread + newSystemUnread;
-
-      if (newTotalUnread > previousTotalUnread && previousTotalUnread !== 0) {
+      if (newUnread > previousUnread && previousUnread !== 0) {
         playNotificationSound();
       }
 
-      setSmsNotifications(newSmsNotifications);
-      setSmsUnreadCount(newSmsUnread);
-      setNotifications(newSystemNotifications);
-      setSystemUnreadCount(newSystemUnread);
+      notificationUnreadCountRef.current = newUnread;
+      setNotifications(newNotifications);
+      setNotificationUnreadCount(newUnread);
     } catch (err) {
       console.error("Fetch Error:", err);
     }
@@ -124,11 +112,7 @@ export const Header = () => {
 
   const markAsRead = async (id: number) => {
     try {
-      const endpoint = notificationSection === "sms"
-        ? `${API_URL}/sms/logs/${id}/read`
-        : `${API_URL}/notifications/${id}/read`;
-
-      await fetch(endpoint, {
+      await fetch(`${API_URL}/notifications/${id}/read`, {
         method: "PUT", credentials: "include",
       });
       fetchNotifications();
@@ -139,11 +123,7 @@ export const Header = () => {
 
   const markAllRead = async () => {
     try {
-      const endpoint = notificationSection === "sms"
-        ? `${API_URL}/sms/mark-read`
-        : `${API_URL}/notifications/mark-read`;
-
-      await fetch(endpoint, { method: "PUT", credentials: "include" });
+      await fetch(`${API_URL}/notifications/mark-read`, { method: "PUT", credentials: "include" });
       fetchNotifications();
     } catch (err) {
       console.error(err);
@@ -158,13 +138,14 @@ export const Header = () => {
         setUser(data);
         const userIsAdmin = data.role?.toLowerCase() === "admin";
         setIsAdmin(userIsAdmin);
+        setActivityScope(data.activity_scope === "all" ? "all" : "mine", userIsAdmin);
       })
       .catch(() => navigate("/"));
 
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 20000);
     return () => clearInterval(interval);
-  }, [navigate]);
+  }, [navigate, setActivityScope, setIsAdmin]);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -203,13 +184,12 @@ export const Header = () => {
 
   // ─── Derived ──────────────────────────────────────────────────────────────
   const filteredNotifications = useMemo(() => {
-    const current = notificationSection === "sms" ? smsNotifications : notifications;
-    return current.filter(
+    return notifications.filter(
       (n: any) => activeTab === "all" || n.is_read === 0
     );
-  }, [notificationSection, smsNotifications, notifications, activeTab]);
+  }, [notifications, activeTab]);
 
-  const totalUnreadCount = smsUnreadCount + systemUnreadCount;
+  const totalUnreadCount = notificationUnreadCount;
   const displayName = user.name || "User";
   const itemsPerPage = 3;
   const maxNotificationPage = Math.max(0, Math.ceil(filteredNotifications.length / itemsPerPage) - 1);
@@ -220,7 +200,7 @@ export const Header = () => {
 
   useEffect(() => {
     setNotificationPage(0);
-  }, [notificationSection, activeTab, filteredNotifications.length]);
+  }, [activeTab, filteredNotifications.length]);
 
   useEffect(() => {
     setNotificationPage(prev => Math.min(prev, maxNotificationPage));
@@ -365,12 +345,7 @@ export const Header = () => {
                         <p className="text-sm md:text-[15px] leading-relaxed whitespace-pre-wrap">
                           {formatInboxMessage(selectedLog.message)}
                         </p>
-                        <div className="flex justify-between items-end mt-4">
-                          {notificationSection === "sms" && (
-                            <span className="text-[8px] font-mono text-muted-foreground">
-                              Cost: ${selectedLog.cost || "0.00"}
-                            </span>
-                          )}
+                        <div className="flex justify-end items-end mt-4">
                           <span className="text-[9px] md:text-[10px] text-muted-foreground block text-right">
                             {new Date(selectedLog.created_at).toLocaleString()}
                           </span>
@@ -389,38 +364,12 @@ export const Header = () => {
                   <>
                     <div className="p-4 md:p-6 border-b bg-muted/10 space-y-3">
                       <div className="flex justify-between items-center gap-3">
-                        <h3 className="font-bold text-base md:text-lg">Inbox</h3>
+                        <h3 className="font-bold text-base md:text-lg">Notifications</h3>
                         <button
                           onClick={(e) => { e.preventDefault(); markAllRead(); }}
                           className="h-7 text-[9px] md:text-[11px] font-bold text-primary uppercase hover:opacity-70"
                         >
                           Mark all read
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setNotificationSection("sms")}
-                          className={cn(
-                            "w-full text-[9px] font-bold uppercase py-2 rounded-xl transition-all",
-                            notificationSection === "sms"
-                              ? "bg-background text-primary shadow-sm"
-                              : "bg-muted/20 text-muted-foreground"
-                          )}
-                        >
-                          SMS {smsUnreadCount > 0 ? `(${smsUnreadCount})` : ""}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setNotificationSection("system")}
-                          className={cn(
-                            "w-full text-[9px] font-bold uppercase py-2 rounded-xl transition-all",
-                            notificationSection === "system"
-                              ? "bg-background text-primary shadow-sm"
-                              : "bg-muted/20 text-muted-foreground"
-                          )}
-                        >
-                          System {systemUnreadCount > 0 ? `(${systemUnreadCount})` : ""}
                         </button>
                       </div>
                       <div className="flex gap-1 p-1 bg-muted/40 rounded-xl border border-muted/10">

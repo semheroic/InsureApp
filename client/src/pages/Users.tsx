@@ -42,6 +42,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useActivityScope } from "@/contexts/ActivityScopeContext";
 
 type User = {
   id: number;
@@ -61,10 +62,11 @@ const API_URL = `${BASE}/users`;
 
 const Users = () => {
   const { toast } = useToast();
+  const { activityScope } = useActivityScope();
 
   // --- State ---
   const [users, setUsers] = useState<User[]>([]);
-  const [currentUser, setCurrentUser] = useState<{ id: number; role: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: number; role: string; activity_scope: "mine" | "all" } | null>(null);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   
@@ -93,16 +95,19 @@ const Users = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      let directoryScope: "mine" | "all" = "mine";
       const meRes = await fetch(`${BASE}/auth/me`, { credentials: "include" });
       if (meRes.ok) {
         const meData = await meRes.json();
+        directoryScope = meData.activity_scope === "all" ? "all" : "mine";
         setCurrentUser({ 
           id: meData.id, 
-          role: meData.role ? meData.role.toLowerCase() : "" 
+          role: meData.role ? meData.role.toLowerCase() : "",
+          activity_scope: directoryScope,
         });
       }
 
-      const res = await fetch(API_URL, { credentials: "include" });
+      const res = await fetch(`${API_URL}?scope=${directoryScope}`, { credentials: "include" });
       if (!res.ok) throw new Error("Unauthorized");
 
       const data = await res.json();
@@ -119,7 +124,7 @@ const Users = () => {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, activityScope]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

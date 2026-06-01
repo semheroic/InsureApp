@@ -338,7 +338,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
   open,
   onClose,
   userRole,
-  activityScope: activityScopeProp = "all",
+  activityScope: activityScopeProp = "mine",
   onActivityScopeChange,
 }) => {
   const navigate = useNavigate(); // Hook for dashboard redirect

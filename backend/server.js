@@ -47,6 +47,7 @@ const configuredOrigins = [
 
 const allowedOrigins = new Set([
   "https://www.brightcoveragency.com",
+  "https://brightcoveragency.vercel.app",
   "https://brightcoveragency.com",
   "https://insure-app-olive.vercel.app",
   "https://brightcoveragency.vercel.app",

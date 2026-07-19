@@ -1850,6 +1850,9 @@ app.get("/api/expiry-report", isAuthenticated, async (req, res) => {
       sharedParams.push(company);
     }
 
+    const [{ report_date: reportDate }] = await query("SELECT DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS report_date");
+    const daysRemainingSql = "DATEDIFF(p.expiry_date, ?)";
+    const reportDateSelectParams = [reportDate, reportDate, reportDate];
     const baseSelect = `
       SELECT 
         p.id,
@@ -1860,50 +1863,59 @@ app.get("/api/expiry-report", isAuthenticated, async (req, res) => {
         p.contact,
         DATE_FORMAT(p.start_date, '%d-%m-%Y') AS startDate,
         DATE_FORMAT(p.expiry_date, '%d-%m-%Y') AS expiryDate,
-        DATEDIFF(p.expiry_date, CURDATE()) AS days_remaining,
+        ${daysRemainingSql} AS days_remaining,
+        DATEDIFF(p.expiry_date, p.start_date) AS days_from_start,
         CASE 
-          WHEN DATEDIFF(p.expiry_date, CURDATE()) < 0 
-          THEN ABS(DATEDIFF(p.expiry_date, CURDATE()))
+          WHEN ${daysRemainingSql} < 0 
+          THEN ABS(${daysRemainingSql})
           ELSE 0
         END AS days_overdue,
         f.followup_status
       FROM policies p
-      LEFT JOIN followups f ON p.id = f.policy_id
+      LEFT JOIN (
+        SELECT f1.policy_id, f1.followup_status
+        FROM followups f1
+        INNER JOIN (
+          SELECT policy_id, MAX(id) AS id
+          FROM followups
+          GROUP BY policy_id
+        ) latest_followups ON latest_followups.id = f1.id
+      ) f ON p.id = f.policy_id
     `;
 
-    // 1️⃣ Expired policies
-    const fetchExpiryGroup = (dateCondition, sortDirection = "ASC") => query(`
+    const fetchExpiryGroup = (dateCondition, sortDirection = "ASC", dateConditionParams = [reportDate]) => query(`
       ${baseSelect}
       ${buildWhereClause(dateCondition, ...sharedConditions)}
-      ORDER BY p.expiry_date ${sortDirection}
-    `, sharedParams);
+      ORDER BY p.expiry_date ${sortDirection}, p.id ASC
+    `, [...reportDateSelectParams, ...dateConditionParams, ...sharedParams]);
 
-    const expired = await fetchExpiryGroup("DATEDIFF(p.expiry_date, CURDATE()) < 0", "DESC");
+    // Buckets are exclusive and cover every integer value returned by days_remaining.
+    const expired = await fetchExpiryGroup(`${daysRemainingSql} < 0`, "DESC");
 
-    // 2️⃣ Expiring today
-    const today = await fetchExpiryGroup("DATEDIFF(p.expiry_date, CURDATE()) = 0");
+    const today = await fetchExpiryGroup(`${daysRemainingSql} = 0`);
 
-    // 3️⃣ Expiring this week (1–7 days)
-    const week = await fetchExpiryGroup("DATEDIFF(p.expiry_date, CURDATE()) BETWEEN 1 AND 7");
+    const sixDays = await fetchExpiryGroup(`${daysRemainingSql} = 6`);
 
-    // 4️⃣ Expiring this month (8–29 days)
-    const month = await fetchExpiryGroup("DATEDIFF(p.expiry_date, CURDATE()) BETWEEN 8 AND 29");
+    const week = await fetchExpiryGroup(
+      `${daysRemainingSql} BETWEEN 1 AND 7 AND ${daysRemainingSql} <> 6`,
+      "ASC",
+      [reportDate, reportDate]
+    );
 
-    // 5️⃣ Exact 30-day reminder
-    const thirtyDays = await fetchExpiryGroup("DATEDIFF(p.expiry_date, CURDATE()) = 30");
+    const month = await fetchExpiryGroup(`${daysRemainingSql} BETWEEN 8 AND 29`);
 
-    // 6️⃣ Upcoming future (31–364 days)
-    const nextMonth = await fetchExpiryGroup("DATEDIFF(p.expiry_date, CURDATE()) BETWEEN 31 AND 364");
+    const thirtyDays = await fetchExpiryGroup(`${daysRemainingSql} = 30`);
 
-    // 7️⃣ Exact 365-day reminder
-    const yearly = await fetchExpiryGroup("DATEDIFF(p.expiry_date, CURDATE()) = 365");
+    const nextMonth = await fetchExpiryGroup(`${daysRemainingSql} BETWEEN 31 AND 364`);
 
-    // 8️⃣ Beyond one year
-    const nextAnnual = await fetchExpiryGroup("DATEDIFF(p.expiry_date, CURDATE()) > 365");
+    const yearly = await fetchExpiryGroup(`${daysRemainingSql} = 365`);
+
+    const nextAnnual = await fetchExpiryGroup(`${daysRemainingSql} > 365`);
 
     res.json({
       expired,
       today,
+      sixDays,
       week,
       month,
       thirtyDays,
@@ -2456,6 +2468,163 @@ app.get("/api/followup", isAuthenticated, async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error("Fetch follow-ups error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// IMPORT follow-ups from migrated policy data
+app.post("/api/followup/import", isAuthenticated, async (req, res) => {
+  try {
+    const followups = Array.isArray(req.body?.followups) ? req.body.followups : [];
+
+    if (!followups.length) {
+      return res.status(400).json({ error: "No follow-up rows were provided" });
+    }
+
+    const normalizeFollowupStatus = value => {
+      const normalized = String(value || "").trim().toLowerCase();
+      if (["confirmed", "confirm", "complete", "completed"].includes(normalized)) return "confirmed";
+      if (["pending", "pending action", "waiting"].includes(normalized)) return "pending";
+      if (["missed", "miss", "failed", "not reached"].includes(normalized)) return "missed";
+      return "";
+    };
+
+    const normalizeImportTimestamp = value => {
+      if (!value) return null;
+      const raw = String(value).trim();
+      if (!raw) return null;
+
+      const sqlTimestamp = raw.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?))?/);
+      if (sqlTimestamp) {
+        return `${sqlTimestamp[1]} ${sqlTimestamp[2] ? sqlTimestamp[2].padEnd(8, ":00").slice(0, 8) : "00:00:00"}`;
+      }
+
+      const normalizedDate = normalizeImportDate(raw);
+      if (normalizedDate) {
+        return `${normalizedDate} 00:00:00`;
+      }
+
+      const parsed = new Date(raw);
+      if (Number.isNaN(parsed.getTime())) return null;
+
+      const year = parsed.getFullYear();
+      const month = String(parsed.getMonth() + 1).padStart(2, "0");
+      const day = String(parsed.getDate()).padStart(2, "0");
+      const hours = String(parsed.getHours()).padStart(2, "0");
+      const minutes = String(parsed.getMinutes()).padStart(2, "0");
+      const seconds = String(parsed.getSeconds()).padStart(2, "0");
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    };
+
+    const findPolicy = async ({ policyNumber, plate, contact }) => {
+      const scope = getPolicyScope(req, "p");
+      const attempts = [];
+
+      if (policyNumber) {
+        attempts.push({ condition: "p.policy_number = ?", params: [policyNumber] });
+      }
+
+      if (plate && contact) {
+        attempts.push({ condition: "p.plate = ? AND p.contact = ?", params: [plate, contact] });
+      }
+
+      if (plate) {
+        attempts.push({ condition: "p.plate = ?", params: [plate] });
+      }
+
+      if (contact) {
+        attempts.push({ condition: "p.contact = ?", params: [contact] });
+      }
+
+      for (const attempt of attempts) {
+        const rows = await query(
+          `
+            SELECT p.id
+            FROM policies p
+            ${buildWhereClause(attempt.condition, scope.condition)}
+            ORDER BY p.id DESC
+            LIMIT 1
+          `,
+          [...attempt.params, ...scope.params]
+        );
+
+        if (rows.length) return rows[0];
+      }
+
+      return null;
+    };
+
+    const importedRows = [];
+    const skippedRows = [];
+
+    for (let i = 0; i < followups.length; i++) {
+      const row = followups[i] || {};
+      const rowNumber = getImportRowNumber(row, i);
+      const status = normalizeFollowupStatus(row.followup_status || row.status);
+      const policyNumber = normalizeTextValue(row.policy_number || row.policyNumber || row.policy_no);
+      const plate = normalizeTextValue(row.plate);
+      const contact = row.contact ? formatRwandaNumber(row.contact) : "";
+      const notes = normalizeTextValue(row.notes);
+      const followedAt = normalizeImportTimestamp(row.followed_at || row.followedAt);
+
+      if (!status) {
+        skippedRows.push({ row: rowNumber, reason: "Invalid followup_status. Use confirmed, pending, or missed." });
+        continue;
+      }
+
+      if (!policyNumber && !plate && !contact) {
+        skippedRows.push({ row: rowNumber, reason: "Missing policy_number, plate, or contact for matching." });
+        continue;
+      }
+
+      const policy = await findPolicy({ policyNumber, plate, contact });
+      if (!policy) {
+        skippedRows.push({ row: rowNumber, reason: "Matching policy was not found." });
+        continue;
+      }
+
+      if (followedAt) {
+        await query(
+          `
+            INSERT INTO followups (policy_id, created_by, followup_status, notes, followed_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              created_by = VALUES(created_by),
+              followup_status = VALUES(followup_status),
+              notes = VALUES(notes),
+              followed_at = VALUES(followed_at)
+          `,
+          [policy.id, req.session.userId, status, notes || null, followedAt]
+        );
+      } else {
+        await query(
+          `
+            INSERT INTO followups (policy_id, created_by, followup_status, notes)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              created_by = VALUES(created_by),
+              followup_status = VALUES(followup_status),
+              notes = VALUES(notes),
+              followed_at = CURRENT_TIMESTAMP
+          `,
+          [policy.id, req.session.userId, status, notes || null]
+        );
+      }
+
+      importedRows.push({ row: rowNumber, policy_id: policy.id, followup_status: status });
+    }
+
+    const summary = `Imported ${importedRows.length} follow-up${importedRows.length === 1 ? "" : "s"}. ${skippedRows.length} row${skippedRows.length === 1 ? "" : "s"} skipped.`;
+    res.json({
+      success: true,
+      message: summary.trim(),
+      imported: importedRows.length,
+      skipped: skippedRows.length,
+      importedRows,
+      skippedRows,
+    });
+  } catch (err) {
+    console.error("Follow-up import error:", err);
     res.status(500).json({ error: err.message });
   }
 });

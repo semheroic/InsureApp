@@ -11,6 +11,7 @@ import {
   Milestone, 
   Loader2, 
   Forward,
+  Timer,
   ShieldCheck 
 } from "lucide-react";
 
@@ -21,6 +22,7 @@ import { ExpiryData, CompanyFilter } from "@/types/policy";
 import { cn } from "@/lib/utils";
 
 interface ExtendedExpiryData extends ExpiryData {
+  sixDays: any[];
   thirtyDays: any[]; 
   yearly: any[]; 
   nextMonth: any[];
@@ -31,12 +33,18 @@ const API_URL = import.meta.env.VITE_API_URL;
 const API_REPORT = `${API_URL}/api/expiry-report`;
 const FOLLOWUP_ENDPOINT = `${API_URL}/api/followup`;
 
+const getDaysRemaining = (policy: any) => {
+  const days = Number(policy.days_remaining ?? policy.daysRemaining);
+  return Number.isFinite(days) ? days : null;
+};
+
 export const ExpiryReport = () => {
   const { toast } = useToast();
   const [companyFilter, setCompanyFilter] = useState<CompanyFilter>("all");
   
   const [data, setData] = useState<ExtendedExpiryData>({ 
     today: [], 
+    sixDays: [],
     week: [], 
     month: [], 
     nextMonth: [], 
@@ -50,7 +58,8 @@ export const ExpiryReport = () => {
   const exportReport = useCallback(() => {
     const sections = [
       { label: "Today", rows: data.today },
-      { label: "Week", rows: data.week },
+      { label: "6 Days", rows: data.sixDays },
+      { label: "This Week", rows: data.week },
       { label: "Month", rows: data.month },
       { label: "Next Month", rows: data.nextMonth },
       { label: "30 Days", rows: data.thirtyDays },
@@ -70,6 +79,7 @@ export const ExpiryReport = () => {
         policy.expiryDate || "",
         policy.contact || "",
         policy.days_remaining ?? "",
+        policy.days_from_start ?? "",
         policy.followup_status || "",
       ])
     );
@@ -89,6 +99,7 @@ export const ExpiryReport = () => {
       "Expiry Date",
       "Contact",
       "Days Remaining",
+      "Days From Start",
       "Follow-Up Status",
     ];
 
@@ -111,10 +122,20 @@ export const ExpiryReport = () => {
       if (!res.ok) throw new Error("Failed to fetch expiry report");
       
       const result: ExtendedExpiryData = await res.json();
+      const weekRows = result.week || [];
+      const sixDaySourceRows = Array.isArray(result.sixDays) ? result.sixDays : weekRows;
+      const sixDayRows = sixDaySourceRows.filter((policy: any) => {
+        const days = getDaysRemaining(policy);
+        return days === 6;
+      });
       
       setData({
         today: result.today || [],
-        week: result.week || [],
+        sixDays: sixDayRows,
+        week: weekRows.filter((policy: any) => {
+          const days = getDaysRemaining(policy);
+          return days !== null && days >= 1 && days <= 7 && days !== 6;
+        }),
         month: result.month || [],
         nextMonth: result.nextMonth || [],
         expired: result.expired || [],
@@ -142,7 +163,8 @@ export const ExpiryReport = () => {
 
   const tabs = useMemo(() => [
     { key: "today", label: "Today", data: data.today, icon: Clock, color: "text-blue-500", badge: "bg-blue-100 dark:bg-blue-900/30 text-blue-600" },
-    { key: "week", label: "Week", data: data.week, icon: Calendar, color: "text-purple-500", badge: "bg-purple-100 dark:bg-purple-900/30 text-purple-600" },
+    { key: "sixDays", label: "6 Days", data: data.sixDays, icon: Timer, color: "text-amber-500", badge: "bg-amber-100 dark:bg-amber-900/30 text-amber-600" },
+    { key: "week", label: "This Week", data: data.week, icon: Calendar, color: "text-purple-500", badge: "bg-purple-100 dark:bg-purple-900/30 text-purple-600" },
     { key: "month", label: "Month", data: data.month, icon: AlertCircle, color: "text-orange-500", badge: "bg-orange-100 dark:bg-orange-900/30 text-orange-600" },
     { key: "nextMonth", label: "Next Mo", data: data.nextMonth, icon: Forward, color: "text-indigo-500", badge: "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600" },
     { key: "thirtyDays", label: "30-Day", data: data.thirtyDays, icon: Zap, color: "text-cyan-500", badge: "bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600" },

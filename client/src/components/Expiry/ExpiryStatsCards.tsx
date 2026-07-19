@@ -9,6 +9,7 @@ import { motion } from "framer-motion";
 
 interface ExpiryStatsCardsProps {
   data: ExpiryData & { 
+    sixDays?: any[];
     thirtyDays?: any[]; 
     yearly?: any[]; 
     nextMonth?: any[]; 
@@ -20,8 +21,10 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
   // Safe total calculation for percentage bars
   const total = (
     (data.today?.length || 0) + 
+    (data.sixDays?.length || 0) +
     (data.week?.length || 0) + 
     (data.month?.length || 0) + 
+    (data.thirtyDays?.length || 0) +
     (data.nextMonth?.length || 0) + 
     (data.expired?.length || 0) +
     (data.nextAnnual?.length || 0) +
@@ -42,9 +45,21 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
       className: "lg:col-span-1 lg:row-span-1",
     },
     {
+      label: "6 Days",
+      count: data.sixDays?.length || 0,
+      description: "Exactly 6 days remaining",
+      icon: Hourglass,
+      theme: "sky",
+      bg: "bg-sky-500/10",
+      iconBg: "bg-sky-500",
+      text: "text-sky-600 dark:text-sky-400",
+      iconColor: "text-white",
+      className: "lg:col-span-1 lg:row-span-1",
+    },
+    {
       label: "This Week",
       count: data.week?.length || 0,
-      description: "Immediate upcoming renewals",
+      description: "1-7 days remaining, excluding 6 days",
       icon: AlertCircle,
       theme: "rose",
       bg: "bg-rose-500/10",
@@ -92,8 +107,8 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
     },
     {
       label: "Annual",
-      count: data.nextAnnual?.length || 0,
-      description: "Upcoming yearly renewals",
+      count: data.yearly?.length || 0,
+      description: "Exactly 365 days remaining",
       icon: CalendarCheck,
       theme: "cyan",
       bg: "bg-cyan-500/10",
@@ -104,8 +119,8 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
     },
     {
       label: "Future Outlook",
-      count: data.yearly?.length || 0,
-      description: "Comprehensive 365-day perspective on all upcoming policy expirations",
+      count: data.nextAnnual?.length || 0,
+      description: "More than 365 days remaining",
       icon: Milestone,
       theme: "emerald",
       bg: "bg-emerald-500/10",
@@ -215,6 +230,7 @@ export const ExpiryStatsCards = ({ data }: ExpiryStatsCardsProps) => {
                           "bg-emerald-500": stat.theme === "emerald",
                           "bg-slate-500": stat.theme === "slate",
                           "bg-cyan-500": stat.theme === "cyan",
+                          "bg-sky-500": stat.theme === "sky",
                         }
                       )}
                     />

@@ -9,6 +9,8 @@ export interface Policy {
   contact: string;
   followup_status?: "confirmed" | "pending" | "missed";
   days_remaining?: number;
+  days_from_start?: number;
+  daysFromStart?: number;
   days_overdue?: number;
   daysOverdue?: number;
   created_by?: number | null;
@@ -16,6 +18,7 @@ export interface Policy {
 
 export interface ExpiryData {
   today: Policy[];
+  sixDays?: Policy[];
   week: Policy[];
   month: Policy[];
   expired: Policy[];

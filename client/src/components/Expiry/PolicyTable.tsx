@@ -28,6 +28,59 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
 const API_URL = import.meta.env.VITE_API_URL;
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+const parsePolicyDate = (value: unknown) => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+
+  if (!value) return null;
+
+  const raw = String(value).trim();
+  if (!raw || raw === "N/A") return null;
+
+  const dmy = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmy) {
+    const [, day, month, year] = dmy;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+
+  const ymd = raw.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+  if (ymd) {
+    const [, year, month, day] = ymd;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+};
+
+const getPolicyDaysRemaining = (policy: any) => {
+  const rawApiDays = policy?.days_remaining ?? policy?.daysRemaining;
+  if (rawApiDays !== undefined && rawApiDays !== null && rawApiDays !== "") {
+    const apiDays = Number(rawApiDays);
+    if (Number.isFinite(apiDays)) return Math.trunc(apiDays);
+  }
+
+  const rawOverdueDays = policy?.days_overdue ?? policy?.daysOverdue;
+  if (rawOverdueDays !== undefined && rawOverdueDays !== null && rawOverdueDays !== "") {
+    const overdueDays = Number(rawOverdueDays);
+    if (Number.isFinite(overdueDays) && overdueDays > 0) {
+      return -Math.trunc(overdueDays);
+    }
+  }
+
+  const expiry = parsePolicyDate(policy?.expiry_date ?? policy?.expiryDate);
+  if (!expiry) return null;
+
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((expiry.getTime() - todayStart.getTime()) / MS_PER_DAY);
+};
+
+const formatEnglishDayCount = (days: number) => `${days} day${days === 1 ? "" : "s"}`;
 
 interface ActionButtonProps {
   icon: any;
@@ -103,15 +156,15 @@ export const PolicyTable = ({
 
     if (startDate || endDate) {
       results = results.filter((p: any) => {
-        const policyDate = new Date((p.expiry_date || p.expiryDate) + "T00:00:00");
-        policyDate.setHours(0, 0, 0, 0);
+        const policyDate = parsePolicyDate(p.expiry_date || p.expiryDate);
+        if (!policyDate) return false;
 
         if (startDate && endDate) {
-          return policyDate >= new Date(startDate) && policyDate <= new Date(endDate);
+          return policyDate >= parsePolicyDate(startDate)! && policyDate <= parsePolicyDate(endDate)!;
         } else if (startDate) {
-          return policyDate >= new Date(startDate);
+          return policyDate >= parsePolicyDate(startDate)!;
         } else if (endDate) {
-          return policyDate <= new Date(endDate);
+          return policyDate <= parsePolicyDate(endDate)!;
         }
         return true;
       });
@@ -132,28 +185,20 @@ export const PolicyTable = ({
 
   const name = policy.owner || "Client";
   const reference = getPolicyReference(policy);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  // Parse expiry date from your backend (expiry_date or expiryDate)
-  const expiryParts = getExpiryDate(policy).split("-");
-  // Expected format from backend: dd-mm-yyyy
-  const expiry = new Date(
-    Number(expiryParts[2]),     // year
-    Number(expiryParts[1]) - 1, // month (0-indexed)
-    Number(expiryParts[0])      // day
-  );
-  expiry.setHours(0, 0, 0, 0);
-
-  const diffTime = expiry.getTime() - today.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const diffDays = getPolicyDaysRemaining(policy);
 
   let statusPhrase = { rw: "", en: "" };
 
-  if (diffDays < 0) {
+  if (diffDays === null) {
     statusPhrase = {
-      rw: `ubwishingizi bwa ${reference} bwarangiye hashize iminsi ${Math.abs(diffDays)}`,
-      en: `the insurance for ${reference} expired ${Math.abs(diffDays)} days ago`,
+      rw: `ubwishingizi bwa ${reference} bufite itariki yo kurangiriraho itagaragara neza`,
+      en: `the insurance for ${reference} has an expiry date that could not be confirmed`,
+    };
+  } else if (diffDays < 0) {
+    const overdueDays = Math.abs(diffDays);
+    statusPhrase = {
+      rw: `ubwishingizi bwa ${reference} bwarangiye hashize iminsi ${overdueDays}`,
+      en: `the insurance for ${reference} expired ${formatEnglishDayCount(overdueDays)} ago`,
     };
   } else if (diffDays === 0) {
     statusPhrase = {
@@ -163,12 +208,12 @@ export const PolicyTable = ({
   } else if (diffDays > 365) {
     statusPhrase = {
       rw: `ubwishingizi bwa ${reference} buracyari buzima, buzashira nyuma y'umwaka (iminsi ${diffDays})`,
-      en: `the insurance for ${reference} is still active and will expire in more than a year (${diffDays} days)`,
+      en: `the insurance for ${reference} is still active and will expire in more than a year (${formatEnglishDayCount(diffDays)})`,
     };
   } else {
     statusPhrase = {
       rw: `ubwishingizi bwa ${reference} buzashira mu minsi ${diffDays}`,
-      en: `the insurance for ${reference} will expire in ${diffDays} days`,
+      en: `the insurance for ${reference} will expire in ${formatEnglishDayCount(diffDays)}`,
     };
   }
 

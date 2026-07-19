@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { 
   Plus, Search, Download, Edit, Trash2, Eye, 
   Calendar as CalendarIcon, Car, User, Building2, 
-  Phone, ClipboardPlus, ChevronLeft, ChevronRight 
+  Phone, ClipboardPlus, ChevronLeft, ChevronRight, Loader2
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -294,6 +294,7 @@ const Policies = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isImporting, setIsImporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [companyFilter, setCompanyFilter] = useState("all");
@@ -329,8 +330,8 @@ const [originalDates, setOriginalDates] = useState<{
 
 
   /* ---------------- FETCH ---------------- */
-  const checkAuthAndFetch = async () => {
-    setLoading(true);
+  const checkAuthAndFetch = async (showPageLoading = true) => {
+    if (showPageLoading) setLoading(true);
     try {
       const authRes = await axios.get(AUTH_URL);
       setUserRole(authRes.data.role);
@@ -349,7 +350,7 @@ const [originalDates, setOriginalDates] = useState<{
     } catch (err: any) {
       toast({ title: "Error", description: err.response?.status === 401 ? "Please login again" : "Failed to load data", variant: "destructive" });
     } finally {
-      setLoading(false);
+      if (showPageLoading) setLoading(false);
     }
   };
 
@@ -691,23 +692,25 @@ const getUserName = (userId?: number | null) => {
   const file = e.target.files?.[0];
   if (!file) return;
 
-  // Step 1: Parse CSV locally
-  const { policies: imported, errors, failedRows } = await importCSV(file);
-
-  // Step 2: Show toast if CSV parsing errors
-  if (errors.length) {
-    toast({
-      title: "CSV Parsing Errors",
-      description: `${errors.length} row(s) have format errors. Valid rows, if any, will still be imported.`,
-      variant: "destructive",
-      duration: 6000,
-    });
-  }
-
-  // Step 3: If no valid rows, stop
-  if (!imported.length && !failedRows.length) return;
+  setIsImporting(true);
 
   try {
+    // Step 1: Parse CSV locally
+    const { policies: imported, errors, failedRows } = await importCSV(file);
+
+    // Step 2: Show toast if CSV parsing errors
+    if (errors.length) {
+      toast({
+        title: "CSV Parsing Errors",
+        description: `${errors.length} row(s) have format errors. Valid rows, if any, will still be imported.`,
+        variant: "destructive",
+        duration: 6000,
+      });
+    }
+
+    // Step 3: If no valid rows, stop
+    if (!imported.length && !failedRows.length) return;
+
     // Step 4: Send valid rows to backend
     const res = await axios.post(`${API_URL}/import`, { policies: imported, failedRows });
     const { inserted, updated, skippedRows, message, importSessionId } = res.data;
@@ -747,7 +750,7 @@ const getUserName = (userId?: number | null) => {
     }
 
     // Step 7: Refresh policies list
-    checkAuthAndFetch();
+    await checkAuthAndFetch(false);
   } catch (err: any) {
     toast({
       title: "Import Failed",
@@ -755,6 +758,7 @@ const getUserName = (userId?: number | null) => {
       variant: "destructive",
     });
   } finally {
+    setIsImporting(false);
     e.target.value = "";
   }
 };
@@ -762,6 +766,17 @@ const getUserName = (userId?: number | null) => {
 
   return (
     <div className="space-y-6">
+      {isImporting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex items-center gap-3 rounded-lg border bg-card px-5 py-4 shadow-lg">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">Importing policies...</p>
+              <p className="text-xs text-muted-foreground">Please wait while records are processed.</p>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold">Insurance Policies</h1>
@@ -776,9 +791,15 @@ const getUserName = (userId?: number | null) => {
     variant="outline"
     className="gap-2 w-full sm:w-auto"
     onClick={() => document.getElementById("import-file")?.click()}
+    disabled={isImporting}
+    aria-busy={isImporting}
   >
-    <Download className="w-4 h-4 rotate-180" />
-    Import CSV
+    {isImporting ? (
+      <Loader2 className="w-4 h-4 animate-spin" />
+    ) : (
+      <Download className="w-4 h-4 rotate-180" />
+    )}
+    {isImporting ? "Importing..." : "Import CSV"}
   </Button>
 
   {/* Small template download button */}
@@ -786,6 +807,7 @@ const getUserName = (userId?: number | null) => {
     variant="ghost"
     size="sm"
     className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1 w-full sm:w-auto"
+    disabled={isImporting}
     onClick={() => {
       const headers = ["policy_number","plate","owner","company","start_date","expiry_date","contact"];
       const csv = [headers].map(r => r.join(",")).join("\n");
@@ -806,6 +828,7 @@ const getUserName = (userId?: number | null) => {
   type="file"
   accept=".csv"
   hidden
+  disabled={isImporting}
   onChange={handleImport}
 />
 
